@@ -1,0 +1,53 @@
+\documentclass{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[letterpaper, margin=1in, bottom=1in]{geometry}
+\usepackage[authoryear,sort,square]{natbib}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{amsthm}
+\usepackage{bbm}
+\usepackage{bbold}
+\usepackage{stmaryrd}
+\usepackage{mathtools}
+\usepackage{mathpartir}
+\usepackage[dvipsnames]{xcolor}
+\usepackage{latex-pl-syntax/pl-syntax}
+\usepackage{xspace}
+\usepackage{suffix}
+\usepackage{turnstile}
+\usepackage{multicol}
+
+\usepackage[hidelinks]{hyperref}
+
+% Notes
+\newcommand{\uncertain}[1]{{\color{red} #1}\xspace}
+\newcommand{\newcommenter}[3]{%
+  \newcommand{#1}[1]{%
+    \textcolor{#2}{\small\textsf{[{#3}: {##1}]}}%
+  }%
+}
+\definecolor{darkgreen}{rgb}{0,0.7,0}
+\newcommenter{\akh}{purple}{AKH}
+
+% AMSTHM Setup
+\newtheorem{thm}{Theorem}
+\newtheorem{lem}{Lemma}
+\newtheorem{cor}{Corollary}
+\newtheorem{conj}{Conjecture}
+\newtheorem{inv}{Invariant}
+\theoremstyle{definition}
+\newtheorem{defn}{Definition}
+
+% Macros
+
+\bibliographystyle{plainnat}
+
+\begin{document}
+
+\end{document}
+%%% Local Variables:
+%%% mode: latex
+%%% TeX-master: t
+%%% End:
