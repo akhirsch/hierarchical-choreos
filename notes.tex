@@ -18,6 +18,7 @@
 \usepackage{suffix}
 \usepackage{turnstile}
 \usepackage{multicol}
+\usepackage{fontawesome}
 
 \usepackage[hidelinks]{hyperref}
 
@@ -42,9 +43,247 @@
 
 % Macros
 
+\newcommand{\uu}{\ensuremath{(\,)}}
+
+\newcommand{\letl}[4]{\textsf{let}\;#1.#2 \mathrel{\coloneqq} #3 \mathrel{\textsf{in}} #4}
+
+\newcommand{\fun}[3]{\textsf{fun}\;#1(#2) \mathrel{\coloneqq} #3}
+\newcommand{\lam}[2]{\lambda#1.\;#2}
+\newcommand{\appfun}[2]{#1\;#2}
+
+\newcommand{\projname}{\textsf{proj}}
+\newcommand{\projl}[1]{\appfun{\projname_1}{#1}}
+\newcommand{\projr}[1]{\appfun{\projname_2}{#1}}
+
+\newcommand{\inl}[1]{\appfun{\textsf{inl}}{#1}}
+\newcommand{\inr}[1]{\appfun{\textsf{inr}}{#1}}
+\newcommand{\case}[5]{\ensuremath{\textsf{case}\;#1 \mathrel{\textsf{of}} \inl{#2} \Rightarrow #3;\; \inr{#4} \Rightarrow #5}}
+
+\newcommand{\casev}[1]{\ensuremath{\textsf{case}\;#1 \mathrel{\textsf{of}} \_ \Rightarrow \bot}}
+
+\newcommand{\send}[2]{#1 \mathbin{\leadsto} #2}
+
+\newcommand{\upname}{\textsf{up}}
+\newcommand{\up}[2]{\appfun{\upname_{#1}}{#2}}
+\newcommand{\downname}{\textsf{down}}
+\newcommand{\down}[2]{\appfun{\downname_{#1}}{#2}}
+
+\newcommand{\unit}{\textsf{unit}\xspace}
+\newcommand{\void}{\textsf{void}\xspace}
+
+\newcommand{\lock}{\text{\faLock}}
+\newcommand{\at}{\ensuremath{\mathrel{@}}}
+\newcommand{\locks}[1]{\text{locks}(#1)}
+
+\newcommand{\reps}[2]{#1 \mathrel{\vartriangleright} #2}
+\newcommand{\cansend}[2]{\text{CanSend}(#1, #2)}
+\newcommand{\candown}[2]{\text{CanDown}(#1, #2)}
+\newcommand{\canup}[2]{\text{CanUp}(#1, #2)}
+
 \bibliographystyle{plainnat}
 
 \begin{document}
+
+\section{Syntax}
+\label{sec:syntax}
+
+\begin{syntax}
+  \category[Types]{\tau}
+    \alternative{\unit}
+    \alternative{\void}
+    \alternative{\ell.\tau}
+    \alternative{\tau_1 \times \tau_2}
+    \alternative{\tau_1 + \tau_2}
+    \alternative{\tau_1 \to \tau_2}
+  \category[Expressions]{e}
+    \alternative{x}
+    \alternative{\uu}
+    \alternative{\ell.e}
+    \alternative{\letl{\ell}{x}{e_1}{e_2}}\\
+    \alternative{(e_1, e_2)}
+    \alternative{\projl{e}}
+    \alternative{\projr{e}}\\
+    \alternative{\inl{e}}
+    \alternative{\inr{e}}
+    \alternative{\case{e_1}{x}{e_2}{y}{e_3}}\\
+    \alternative{\casev{e}}\\
+    \alternative{\lam{x}{e}}
+    \alternative{\appfun{e_1}{e_2}}\\
+    \alternative{\send{e}{\ell}}
+    \alternative{\up{m}{e}}
+    \alternative{\down{m}{e}}
+  \category[Modalities]{m}
+    \alternative{\diamond}
+    \alternative{m \cdot \ell}
+  \category[Contexts]{\Gamma}
+    \alternative{\cdot}
+    \alternative{\Gamma, x : \tau \at m}
+    \alternative{\Gamma, \lock_m}
+\end{syntax}
+
+\section{Type System}
+\label{sec:type-system}
+
+\begin{mathpar}
+  \infer{ }{x : \tau \at m \overset{\diamond}{\in} \Gamma, x : \tau \at m} \and
+  \infer{x : \tau \at m \overset{m'}{\in} \Gamma}{x : \tau \at m \overset{m'}{\in} \Gamma, y : \sigma \at m''} \and
+  \infer{x : \tau \at m \overset{m'}{\in} \Gamma}{x : \tau \at m \overset{m' \cdot m''}{\in} \Gamma, \lock_{m''}} \and
+\end{mathpar}
+
+$$
+\locks{\Gamma} = \left\{\begin{array}{ll}
+  \diamond & \text{if $\Gamma = \cdot$}\\
+  \locks{\Delta} & \text{if $\Gamma = \Delta, x : \tau \at m$}\\
+  \locks{\Delta} \cdot m & \text{if $\Gamma = \Delta, \lock_m$}
+\end{array}
+\right.
+$$
+
+\begin{lem}
+  $x : \tau \at m \overset{m'}{\in}\Gamma$ if and only if $\Gamma = \Delta_1, x : \tau \at m, \Delta_2$ where $\locks{\Delta_2} = m'$.
+\end{lem}
+
+The type system is parameterized on several relations:
+\begin{itemize}
+\item $\reps{m}{m'}$
+\item $\cansend{m}{m'}$
+\item $\canup{m}{m'}$
+\item $\candown{m}{m'}$
+\end{itemize}
+These control when certain rules are available.
+Different settings result in different interpretations of the calculus.
+
+\begin{mathpar}
+  \infer{
+    x : \tau \at m \overset{m'}{\in} \Gamma\\
+    \reps{m}{m'}
+  } {
+    \Gamma \vdash x : \tau
+  }\and
+  \infer {  } {
+    \Gamma \vdash \uu : \unit
+  }\and
+  \infer{
+  \Gamma, \lock_\ell \vdash e : \tau
+}{
+  \Gamma \vdash \ell.e : \ell.\tau
+}\and
+\infer{
+  \Gamma \vdash e_1 : \ell.\tau\\
+  \Gamma, x : \tau \at \ell \vdash e_2 : \sigma
+}{
+  \Gamma \vdash \letl{\ell}{x}{e_1}{e_2}
+}\\
+\infer{
+  \Gamma \vdash e_1 : \tau_1\\
+  \Gamma \vdash e_2 : \tau_2
+}{
+  \Gamma \vdash (e_1, e_2) : \tau_1 \times \tau_2
+} \and
+\infer{
+  \Gamma \vdash e : \tau_1 \times \tau_2
+}{
+  \Gamma \vdash \projl{e} : \tau_1
+} \and
+\infer{
+  \Gamma \vdash e : \tau_1 \times \tau_2
+}{
+  \Gamma \vdash \projr{e} : \tau_2
+} \\
+\infer{
+  \Gamma \vdash e : \tau_1
+}{
+  \Gamma \vdash \inl{e} : \tau_1 + \tau_2
+}\and
+\infer{
+  \Gamma \vdash e : \tau_2
+}{
+  \Gamma \vdash \inr{e} : \tau_1 + \tau_2
+}\and
+\infer{
+  \Gamma \vdash e_1 : \tau_1 + \tau_2\\
+  \Gamma, x : \tau_1 \at \diamond \vdash e_2 : \sigma\\
+  \Gamma, y : \tau_2 \at \diamond \vdash e_3 : \sigma
+}{
+  \Gamma \vdash \case{e_1}{x}{e_2}{y}{e_3} : \sigma
+}\\
+\infer{
+  \Gamma \vdash e : \void
+}{
+  \Gamma \vdash \casev{e} : \tau
+}\and
+\infer{
+  \Gamma, x : \tau \at \diamond \vdash e : \sigma
+}{
+  \Gamma \vdash \lam{x}{e} : \tau \to \sigma
+}\and
+\infer{
+  \Gamma \vdash e_1 : \tau \to \sigma\\
+  \Gamma \vdash e_2 : \tau
+}{
+  \Gamma \vdash \appfun{e_1}{e_2} : \sigma
+}\\
+\infer{
+  \Gamma \vdash e : m.\tau\\
+  \cansend{m}{m'}
+}{
+  \Gamma \vdash \send{e}{m'} : m'.\tau
+}\and
+\infer{
+  \Gamma \vdash e : \tau\\
+  \canup{\locks{\Gamma}}{m}
+}{
+  \Gamma \vdash \up{m}{e} : m.\tau
+}\and
+\infer{
+  \Gamma \vdash e : m.\tau\\
+  \candown{\locks{\Gamma}}{m}
+}{
+  \Gamma \vdash \down{m}{e} : \tau
+}
+  
+  
+\end{mathpar}
+
+\section{Multitier Interpretation}
+\label{sec:mult-interpr}
+
+\begin{mathpar}
+  \left\llbracket \infer{\Gamma, \lock_\ell \vdash e : \tau}{\Gamma \vdash \ell.e : \ell.\tau} \right\rrbracket_{\locks{\Gamma}\cdot\ell} = \textsf{send}\;\llbracket \Gamma, \lock_\ell \vdash e : \tau \rrbracket_{\locks{\Gamma} \cdot \ell} \mathrel{\textsf{to}} \locks{\Gamma}\\
+  \left\llbracket \infer{\Gamma, \lock_\ell \vdash e : \tau}{\Gamma \vdash \ell.e : \ell.\tau} \right\rrbracket_{\locks{\Gamma}} = \textsf{wrap}\;\ell\; (\textsf{receive}\;\textsf{from}\;\locks{\Gamma}\cdot \ell)\\
+  \left\llbracket\infer{\Gamma \vdash e_1 : \ell.\tau\\ \Gamma, x : \tau \at \ell \vdash e_2 : \sigma}{\Gamma \vdash \letl{\ell}{x}{e_1}{e_2} : \sigma}\right\rrbracket_{\locks{\Gamma}\cdot\ell} =
+  \textsf{let}\; x = \textsf{receive} \mathrel{\textsf{from}} \locks{\Gamma} \mathrel{\textsf{in}} \llbracket \Gamma, x : \tau @ \ell \vdash e_2 : \sigma \rrbracket_{\locks{\Gamma} \cdot \ell}\\
+  \left\llbracket\infer{\Gamma \vdash e_1 : \ell.\tau\\ \Gamma, x : \tau \at \ell \vdash e_2 : \sigma}{\Gamma \vdash \letl{\ell}{x}{e_1}{e_2} : \sigma}\right\rrbracket_{\locks{\Gamma}} =
+  \textsf{send}(\textsf{unwrap}\;\ell\;\llbracket\Gamma \vdash e_1 : \ell.\tau\rrbracket_{\locks{\Gamma}}); \llbracket \Gamma, x : \tau @ \ell \vdash e_2 : \sigma \rrbracket
+\end{mathpar}
+
+\section{Choreographic Interpretation}
+\label{sec:chor-interpr}
+
+\section{Properties}
+\label{sec:properties}
+
+We want to show the properties; where appropriate, we want to show them for every interpretation we discuss.
+
+\begin{thm}[Normalization]
+  If $\Gamma \vdash e : \tau$ then there is a trace~$t$ and term~$n$ such that $e \xRightarrow{t} n$ and $\vdash_{nf} n$ and $\Gamma \vdash n : \tau$.
+\end{thm}
+
+\begin{thm}[Normal Form Noninterference]
+  If\/ $\Gamma, x : \tau \at m \vdash e : m'.\sigma$, $\lnot (\reps{m}{m'})$, $\lnot\canup{m}{m'}$, $\lnot\candown{m}{m'}$, and $\lnot\cansend{m}{m'}$, then if\/ $\vdash_{nf} e$ then $x \not\in \text{FV}(e)$.
+\end{thm}
+
+\begin{cor}[Noninterference]
+  If\/ $\Gamma, x : \tau \at m \vdash e_1 : m'.\sigma$ and $\Gamma \vdash e_2, e_3 : m.\tau$ and there is no trust relationship between~$m$ and~$m'$ (as described above), then $\letl{m}{x}{e_2}{e_1} \equiv_{\alpha, \beta, \eta} \letl{m}{x}{e_3}{e_1}$.
+\end{cor}
+
+\begin{thm}[Correctness of EPP]
+  If\/ $\Gamma \vdash e : \tau$ and $e \xRightarrow{t} n$ where\/ $\vdash_{nf} n$, then $\llbracket e \rrbracket_m \xRightarrow{\llbracket t \rrbracket_m} \llbracket n \rrbracket_m$.
+\end{thm}
+
+\begin{cor}[Deadlock Freedom]
+  If\/ $\Gamma \vdash e : \tau$ then there is a normal form~$n$ and trace~$t$ such that $\llbracket e \rrbracket \xRightarrow{t} n$
+\end{cor}
 
 \end{document}
 %%% Local Variables:
