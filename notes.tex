@@ -64,9 +64,9 @@
 \newcommand{\send}[2]{#1 \mathbin{\leadsto} #2}
 
 \newcommand{\upname}{\textsf{up}}
-\newcommand{\up}[2]{\appfun{\upname_{#1}}{#2}}
+\newcommand{\up}[3]{\appfun{\upname_{#1}^{#2}}{#3}}
 \newcommand{\downname}{\textsf{down}}
-\newcommand{\down}[2]{\appfun{\downname_{#1}}{#2}}
+\newcommand{\down}[3]{\appfun{\downname_{#1}^{#2}}{#2}}
 
 \newcommand{\unit}{\textsf{unit}\xspace}
 \newcommand{\void}{\textsf{void}\xspace}
@@ -79,6 +79,16 @@
 \newcommand{\cansend}[2]{\text{CanSend}(#1, #2)}
 \newcommand{\candown}[2]{\text{CanDown}(#1, #2)}
 \newcommand{\canup}[2]{\text{CanUp}(#1, #2)}
+
+\newcommand{\bcchoice}[2]{\textsf{bc}\,[#1] \mathrel{\textsf{to}} #2}
+\newcommand{\bcchoiceL}[1]{\bcchoice{L}{#1}}
+\newcommand{\bcchoiceR}[1]{\bcchoice{R}{#1}}
+\newcommand{\upmvar}[1]{\ensuremath{\upname_{#1}\!\textsf{var}}}
+\newcommand{\upmuu}[1]{\appfun{\upname_{#1}}{\uu}}
+\newcommand{\upmpair}[1]{\appfun{\upname_{#1}}{\textsf{pair}}}
+\newcommand{\upminl}[1]{\appfun{\upname_{#1}}{\textsf{inl}}}
+\newcommand{\upminr}[1]{\appfun{\upname_{#1}}{\textsf{inr}}}
+\newcommand{\upmlam}[1]{\ensuremath{\upname_{#1}\!\lambda}}
 
 \bibliographystyle{plainnat}
 
@@ -110,8 +120,8 @@
     \alternative{\lam{x}{e}}
     \alternative{\appfun{e_1}{e_2}}\\
     \alternative{\send{e}{\ell}}
-    \alternative{\up{m}{e}}
-    \alternative{\down{m}{e}}
+    \alternative{\up{m}{S}{e}}
+    \alternative{\down{m}{S}{e}}
   \category[Modalities]{m}
     \alternative{\diamond}
     \alternative{m \cdot \ell}
@@ -233,19 +243,72 @@ Different settings result in different interpretations of the calculus.
   \Gamma \vdash e : \tau\\
   \canup{\locks{\Gamma}}{m}
 }{
-  \Gamma \vdash \up{m}{e} : m.\tau
+  \Gamma \vdash \up{m}{S}{e} : m.\tau
 }\and
 \infer{
   \Gamma \vdash e : m.\tau\\
   \candown{\locks{\Gamma}}{m}
 }{
-  \Gamma \vdash \down{m}{e} : \tau
+  \Gamma \vdash \down{m}{S}{e} : \tau
 }
   
   
 \end{mathpar}
 
-\section{Multitier Interpretation}
+\section{Operational Semantics}
+\label{sec:oper-semant}
+
+\begin{syntax}
+  \category[Evaluation Contexts]{C}
+    \alternative{[\cdot]}
+    \alternative{\letl{\ell}{x}{C}{e}}\\
+    \alternative{(C, e)}
+    \alternative{(e, C)}
+    \alternative{\projl{C}}
+    \alternative{\projr{C}}\\
+    \alternative{\inl{C}}
+    \alternative{\inr{C}}
+    \alternative{\case{C}{x}{e_1}{y}{e_2}}\\
+    \alternative{\casev{C}}\\
+    \alternative{\lam{x}{C}}
+    \alternative{\appfun{C}{e}}
+    \alternative{\appfun{e}{C}}\\
+    \alternative{\send{C}{m}}
+    \alternative{\up{m}{S}{C}}
+    \alternative{\down{m}{S}{C}}
+  \category[LTS Labels]{\alpha}
+    \alternative{\bullet}
+    \alternative{m.\alpha}
+    \alternative{\bcchoiceL}{S}
+    \alternative{\bcchoiceR}{S}\\
+    \alternative{\upmvar{m}}
+    \alternative{\upmuu{m}}
+    \alternative{\upmpair{m}}
+    \alternative{\upminl{m}}
+    \alternative{\upminr{m}}
+    \alternative{\upmlam{m}}
+\end{syntax}
+
+\begin{mathpar}
+  \infer{e \xRightarrow{\alpha} e'}{m.e \xRightarrow{m.\alpha} m.e'}\and
+  \infer{e \xRightarrow{\alpha} e'}{C[e] \xRightarrow{\alpha} C[e']}\\
+  \infer{}{\letl{\ell}{x}{\ell.e}{e'} \xRightarrow{\bullet} e'[\ell | x \mapsto e]}\and
+  \infer{}{\projl{(e_1, e_2)} \xRightarrow{\bullet} e_1}\and
+  \infer{}{\projr{(e_1, e_2)} \xRightarrow{\bullet} e_2}\and
+  \infer{}{\case{\inl{e_0}}{x}{e_1}{y}{e_2} \xRightarrow{\bcchoiceL{(\textsf{locs}(e_1) \cup \textsf{locs}(e_2))}} e_1[x \mapsto e_0]}\and
+  \infer{}{\case{\inr{e_0}}{x}{e_1}{y}{e_2} \xRightarrow{\bcchoiceR{(\textsf{locs}(e_1) \cup \textsf{locs}(e_2))}} e_2[x \mapsto e_0]}\and
+  \infer{}{\appfun{(\lam{x}{e})}{e'} \xRightarrow{\bullet} e[x \mapsto e']}\\
+  \infer{x \in S}{\up{m}{S}{x} \xRightarrow{\upmvar{m}} x}\\
+  \infer{}{\up{m}{S}{\uu} \xRightarrow{{\upmuu{m}}} m.\uu} \and
+  \infer{}{\up{m}{S}{(e_1, e_2)} \xRightarrow{\upmpair{m}} \letl{m}{x_1}{\up{S}{m}{e_1}}{\letl{m}{x_2}{\up{S}{m}{e_2}}{(x_1,x_2)}}}\\
+  \infer{}{\up{m}{S}{(\inl{e})} \xRightarrow{\upminl{m}} \inl{(\up{m}{S}{e})}}\and
+  \infer{}{\up{m}{S}{(\inr{e})} \xRightarrow{\upminr{m}} \inr{(\up{m}{S}{e})}}\\
+  \infer{}{\up{m}{S}{(\lam{x}{e})} \xRightarrow{\upmlam{m}} \lam{x}{\up{m}{S \cup \{x\}}{e}}}
+\end{mathpar}
+
+\section{Endpoint Projection}
+\label{sec:endpoint-projection}
+\subsection{Multitier Interpretation}
 \label{sec:mult-interpr}
 
 \begin{mathpar}
@@ -257,7 +320,7 @@ Different settings result in different interpretations of the calculus.
   \textsf{send}(\textsf{unwrap}\;\ell\;\llbracket\Gamma \vdash e_1 : \ell.\tau\rrbracket_{\locks{\Gamma}}); \llbracket \Gamma, x : \tau @ \ell \vdash e_2 : \sigma \rrbracket
 \end{mathpar}
 
-\section{Choreographic Interpretation}
+\subsection{Choreographic Interpretation}
 \label{sec:chor-interpr}
 
 \section{Properties}
@@ -269,9 +332,12 @@ We want to show the properties; where appropriate, we want to show them for ever
   If $\Gamma \vdash e : \tau$ then there is a trace~$t$ and term~$n$ such that $e \xRightarrow{t} n$ and $\vdash_{nf} n$ and $\Gamma \vdash n : \tau$.
 \end{thm}
 
+\noindent\textbf{Note:} the following theorem is \emph{\textbf{false}}.
+\vspace{-0.5em}
 \begin{thm}[Normal Form Noninterference]
   If\/ $\Gamma, x : \tau \at m \vdash e : m'.\sigma$, $\lnot (\reps{m}{m'})$, $\lnot\canup{m}{m'}$, $\lnot\candown{m}{m'}$, and $\lnot\cansend{m}{m'}$, then if\/ $\vdash_{nf} e$ then $x \not\in \text{FV}(e)$.
 \end{thm}
+
 
 \begin{cor}[Noninterference]
   If\/ $\Gamma, x : \tau \at m \vdash e_1 : m'.\sigma$ and $\Gamma \vdash e_2, e_3 : m.\tau$ and there is no trust relationship between~$m$ and~$m'$ (as described above), then $\letl{m}{x}{e_2}{e_1} \equiv_{\alpha, \beta, \eta} \letl{m}{x}{e_3}{e_1}$.
