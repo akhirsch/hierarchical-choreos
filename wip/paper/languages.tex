@@ -1,0 +1,64 @@
+\section{A Language for Hierarchical Choreographic and Multitier Programming}
+\label{sec:lang-hier-chor}
+
+\begin{figure}
+  \centering
+  \begin{syntax}
+    \category[Types]{\tau}
+    \alternative{\unit}
+    \alternative{\void}
+    \alternative{\believes{A}{\tau}}
+    \alternative{\tau_1 \times \tau_2}
+    \alternative{\tau_1 + \tau_2}
+    \alternative{\tau_1 \to \tau_2}
+    \category[Expressions]{e}
+    \alternative{x}
+    \alternative{A.e}
+    \alternative{\letl{g_1}{g_2}{x}{e_1}{e_2}}\\
+    \alternative{\send{e}{A}}
+    \alternative{\up{m}{e}}
+    \alternative{\down{m}{e}}
+  \end{syntax}
+  \begin{mathpar}
+    \infer{
+      \locks{\Delta} = g
+    } {
+      \Gamma, x : \tau @ g, \Delta \vdash x : \tau
+    }\\
+    \infer{
+      \Gamma, \lock_A \vdash e : \tau
+    }{
+      \Gamma \vdash A.e : A.\tau
+    }\and
+    \infer{
+      \Gamma, \lock_{g_1} \vdash e_1 : g_2.\tau\\
+      \Gamma, x : \tau \at g_1 \join g_2 \vdash e_2 : \sigma
+    }{
+      \Gamma \vdash \letl{g_1}{g_2}{x}{e_1}{e_2}
+    }\\
+    \infer{
+      \Gamma \vdash e : \tau\\
+      \canup{\locks{\Gamma}}{m}
+    }{
+      \Gamma \vdash \up{m}{e} : m.\tau
+    }\and
+    \infer{
+      \Gamma \vdash e : m.\tau\\
+      \candown{\locks{\Gamma}}{m}
+    }{
+      \Gamma \vdash \down{m}{e} : \tau
+    }\\
+    \infer{
+      \Gamma \vdash e : m.\tau\\
+      \cansend{m}{m'}
+    }{
+      \Gamma \vdash \send{e}{m'} : m'.\tau
+    }\and
+  \end{mathpar}
+  \caption{Choreographic Language Selected Syntax and Typing Rules}
+  \label{fig:choreo-types}
+\end{figure}
+%%% Local Variables:
+%%% mode: LaTeX
+%%% TeX-master: "conference"
+%%% End:
