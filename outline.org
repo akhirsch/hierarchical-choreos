@@ -1,0 +1,42 @@
+#+LATEX_CLASS: article
+#+LATEX_HEADER: \usepackage{enumerate}
+#+OPTIONS: toc:nil
+#+OPTIONS: H: 0
+#+OPTIONS: author:Andrew K. Hirsch
+#+TITLE: A Modal Propositions-As-Types Principle for Choreographic and Multitier Programming (Abstract)
+
+
+* Intro
+** Doxastic Logic
+*** Multiagent logic of belief
+**** Concurrent intuition: Different agents as threads
+**** Natural fit for global paradigms
+*** Beliefs about Beliefs
+**** "Alice believes that Bob believes that ..."
+**** Challenge: What does this mean in the concurrent interpretation
+**** N.B.: Alice's Bob is completely separate from Bob
+***** Distinguishes Doxastic from Epistemic logic
+** Communication and Authorization Logic
+*** Second challenge: Lack of communication primitives
+*** Communication implicitly occurs between an agent and their process
+**** In a PaT interpretation of "Alice believes (Bob believes Phi)", Alice has access to some resource representing Bob believing Phi
+*** Authorization logic adds explicit communication
+**** Used to reason about security policies in distributed systems
+**** Speaksfor (static) as channels
+**** Speaksfor-elim as communication
+*** Nested Beliefs and Hierarchical Computing
+**** Nested Beliefs create a tree structure on agents
+**** Idea: hierarchical computing as a PaT interpretation
+***** Examples: threads on nodes, server farms, owner-worker topologies...
+**** Authorization-logic speaksfor as choreographic send
+**** Self-knowledge and Multitier programming
+*** This talk
+**** Calculus for PaT Hierarchical Computing
+***** WIP!
+**** Logical Conjectures
+**** Computational Conjectures
+* Doxastic Logic & Authorization Logic
+** Believes modality
+*** Represents 
+* A Hierarchical Choreographic Calculus
+* Conjectures
