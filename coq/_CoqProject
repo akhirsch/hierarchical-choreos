@@ -1,2 +1,3 @@
 -R _build/default Corps
 Base/EqBool.v
+Corps/Syntax.v
