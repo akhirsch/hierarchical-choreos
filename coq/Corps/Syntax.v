@@ -5,6 +5,7 @@ Require Import Lia.
 Section CorpsSyntax.
 
   Context (PName : Type) `{EqBool PName}.
+  Set Implicit Arguments.
   
   Section CorpsTypes.
 
@@ -482,7 +483,7 @@ Section CorpsSyntax.
 
     Theorem closed_closed_above : forall e, closed e -> forall n, closed_above e n.
     Proof using.
-      intros e clsd n; apply (closed_above_mono' e 0 clsd n). apply le_0_n.
+      intros e clsd n; apply (closed_above_mono' clsd). apply le_0_n.
     Qed.
       
     Lemma closed_above_ren_id : forall e ξ n,
@@ -502,14 +503,14 @@ Section CorpsSyntax.
           | [ H : forall m, m < ?n -> ?f m = m |- context[renup ?f]] =>
               lazymatch goal with
               | [ _ : forall m, m < S ?n -> renup ?f m = m |- _ ] => fail
-              | _ => pose proof (renup_id_below f n H)
+              | _ => pose proof (renup_id_below f H)
               end
           end.
     Qed.
 
     Corollary closed_ren_id : forall e, closed e -> forall ξ, ren e ξ = e.
     Proof using.
-      intros e clsd ξ; apply (closed_above_ren_id e ξ 0); [| exact clsd].
+      intros e clsd ξ; apply (@closed_above_ren_id e ξ 0); [| exact clsd].
       intros m m_lt_z; inversion m_lt_z.
     Qed.
 
@@ -529,7 +530,7 @@ Section CorpsSyntax.
           | [H : forall m, m < ?n -> ?f m = var m |- context[substup ?f]] =>
               lazymatch goal with
               | [_ : forall m, m < S n -> substup f m = var m |- _] => fail
-              | _ => pose proof (substup_id_below f n H)
+              | _ => pose proof (substup_id_below f H)
               end
           end.
     Qed.
@@ -559,7 +560,7 @@ Section CorpsSyntax.
           | [ H : forall m, m < ?k1 -> ?f m < ?k2 |- context[renup ?f]] =>
               lazymatch goal with
               | [_ : forall m, m < S k1 -> renup f m < S k2 |- _ ] => fail
-              | _ => pose proof (renup_closed_above f k1 k2 H)
+              | _ => pose proof (renup_closed_above f H)
               end
           end;
         try (econstructor; eauto; fail).
@@ -586,7 +587,7 @@ Section CorpsSyntax.
           | [ H : forall m, m < ?n -> closed_above (?σ m) ?k |- context[substup ?σ]] =>
               lazymatch goal with
               | [ _ : forall m, m < S n -> closed_above (substup σ m) (S k) |- _ ] => fail
-              | _ => pose proof (substup_closed_above σ n k H)
+              | _ => pose proof (substup_closed_above σ H)
               end
           end;
         try (econstructor; eauto; fail).
@@ -627,3 +628,4 @@ Section CorpsSyntax.
  
   End Closure.
 End CorpsSyntax.
+
