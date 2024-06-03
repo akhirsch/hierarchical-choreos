@@ -1,0 +1,26 @@
+\section{Conjectures}
+\label{sec:conjectures}
+
+In current work we are exploring endpoint projection for Corps.
+While in previous works processes were in one-to-one correspondence with agents, in Corps processes correspond to \emph{generalized} agents.
+Thus, each node at every level of the tree is a process.
+Endpoint projection is then a type-directed translation $\llbracket \Gamma \vdash e : \tau \rrbracket_{g}$, which is non-trivial only when $g$ is at or above $\locks{\Gamma}$.
+
+We are also currently developing a normalizing semantics for Corps, in the usual sense of $\lambda$-calculus.
+However, the connection to logic suggests that there are two notions of normalization that will be interesting to study: one which does not reduce any communications, and one which reduces communications of positive forms.
+The first corresponds to cut elimination in sequent-calculus presentations of authorization logic, while the second corresponds to a stronger normal form of proofs where only variables may be communicated.
+Both \citet{HirschACAT20} and \citet{GratzerNKB20} have found that this stronger normal form is useful when studying modal logics with communication; this suggests a deep reason why.
+We plan to use a labeled-transition semantics of Corps which reduces communication to show that authorization and doxastic proofs enjoy this stronger normalization property.
+The correctness of endpoint projection and normalization also suggest that Corps is deadlock free.
+
+In authorization logics, an important property is \emph{noninterference}: if $A \mathrel{\textsf{speaksfor}} B$ is \emph{not} true, then $A$'s beliefs cannot affect $B$'s beliefs~\cite{HirschACAT20,HirschC13,GargP06,JiaVMZZSZ08}.
+We believe a similar property is true for Corps, taking into account the \canupname{} and \candownname{}~relations in addition to \cansendname{}.
+However, we believe that this will be significantly easier to prove for Corps, taking advantage of proof techniques for noninterference in information-flow control systems~\cite{MenzHLG23,SilverHCHZ23,HirschC21}.
+We hope to leverage these proof techniques to allow for noninterference proofs for more complicated authorization logics in the future, as previous attempts have been stymied by the complex proof-theoretic constructions involved.
+
+
+
+%%% Local Variables:
+%%% mode: LaTeX
+%%% TeX-master: "conference"
+%%% End:

@@ -1,6 +1,20 @@
 \section{Conclusion}
 \label{sec:conclusion}
 
+In this work, we presented Corps, a language for \emph{hierarchical choreographic programming} with a propositions-as-types connection to authorization logic and doxastic logics more broadly.
+While Corps is still very much an early work in progress, we believe that there are significant early results suggesting the fundamental nature of this work.
+Moreover, should our conjectures hold, we can use them to translate between results about the type theory of functional choreographic programs and the proof theory of authorization logic.
+Since the complexity of authorization-logic proof theory has prevented much development in the field, we are hopeful that this will spurn much development in both fields.
+
+We hope that this work will inspire changes in how people design functional choreographic programming languages.
+When restricted to only ``first-tier'' agents, Corps programs are close to  other functional choreographic programming languages, like Pirouette~\cite{HirschG22} and Chor$\lambda$~\cite{GraversenHM23,CruzFilipeGLMP21}.
+However, subtle differences coming from the logical side have begun to appear; by exploiting those, we believe that we can design more grounded, foundational choreographic languages.
+
+Finally, we note that this work suggests a deep connection between linear and doxastic logics: since deadlock-free communication seems to spring from both linear logic (via session types) and doxastic logics (via hierarchical choreographic programming).
+The nature of this connection is unclear; each proof in doxastic logic seems to give rise to a series of linear-logic proofs, one for each projected program.
+However, given that no-one has as of yet been able to show that projections of choreographic programs follow a linear-logic session type, this is unclear.
+Nevertheless, tugging on this thread may lead to ideas that will change our understanding of both logic and concurrency.
+
 %%% Local Variables:
 %%% mode: latex
 %%% TeX-master: "conference"

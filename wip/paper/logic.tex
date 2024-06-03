@@ -2,8 +2,9 @@
 \label{sec:backgr-doxast-auth}
 
 As described in Section~\ref{sec:introduction}, doxastic logics are modal logics of belief.
-In this section, we present the main rules of a simple doxastic logic in Fitch style, and then show how it can be expanded to an authorization logic.
-This expansion requires reasoning about trust (via the \textsf{speaksfor} primitive) and communication more directly.
+In this section, we present the main rules of a simple authorization logic in Fitch style~\cite{Clouston18}.
+One rule requires reasoning about trust (modeled as a relation called \textsf{speaksfor}) and communication directly.
+This rule separates authorization logics from other doxastic logics.
 
 \begin{figure}
   \centering
@@ -44,7 +45,8 @@ The context $\Gamma, \lock_g$ represents $g$'s view of the context $\Gamma$---$g
 Generalized agents are essentially (snoc) lists of agents, and thus form a monoid in a standard way.
 We write the monoid action as $\join$.
 In particular, $$g \join g' = \left\{\begin{array}{ll} g & \text{if $g' = \diamond$}\\ (g \join g'') \cdot A & \text{if $g' = g'' \cdot A$}\end{array}\right.$$
-We can then use the to compute the locks in a context; anything to the right of a context~$\Delta$ will be considered from the point of view of $\locks{\Delta}$.
+We can then compute the locks in a context.
+We consider a judgment $\Gamma \vdash \varphi$ to be a proof of $\varphi$ ``from $\locks{\Gamma}$'s point of view.''
 $$\locks{\Delta} = \left\{\begin{array}{ll} \diamond & \text{if $\Delta = \cdot$}\\ \locks{\Delta'} & \text{if $\Delta = \Delta', \varphi \at g$}\\ \locks{\Delta'} \join g & \text{if $\Delta = \Delta', \lock_g$}\end{array}\right.$$
 Contexts also use the monoid action freely to reason about locks; in other words, contexts obey the equations $\Gamma, \lock_\diamond = \Gamma$ and $\Gamma, \lock_{g_1}, \lock_{g_2} = \Gamma, \lock_{g_1 \join g_2}$.
 
@@ -64,19 +66,20 @@ Contexts also use the monoid action freely to reason about locks; in other words
   \label{fig:dox-rules}
 \end{figure}
 
-Figure~\ref{fig:dox-rules} contains selected rules of doxastic logic.
+Figure~\ref{fig:dox-rules} contains selected rules of authorization logic.
 (The rule \textsc{SpeaksforE} is a rule of authorization logic not found in standard doxastic logic.)
-All of the rules presented here interact with the $\believes{A}{}$ modality; in fact, these are the only rules that do.
-All of the remaining rules are the standard rules of intuitionistic propositional logic.
-The first rule is \textsc{Axiom}, which allows the use of an assumption~$\varphi \at g$
+The rules presented here define the behavior of the $\believes{A}{}$ modality.
+Only the standard rules of intuitionistic propositional logic remain.
+
+The first rule is \textsc{Axiom}, which allows the use of an assumption~$\varphi \at g$.
 In order to use such an assumption, we must know that the locks to the left of the assumption form $g$.
-In other words, we must know that the proof is ``from $g$'s point of view,'' and thus it appropriate to assume $\varphi$ from the fact that $g$ believes it.
+In other words, we must know that the proof is ``from $g$'s point of view,'' and thus it is appropriate to assume $\varphi$ from the fact that $g$ believes it.
 
 The next two rules are the introduction and elimination rules for the $\believes{A}{}$ modality.
 The first says that we can prove $\believes{A}{\varphi}$ if we can prove $\varphi$ with an $A$-labeled lock.
 Since we can view locking a context as taking on $A$'s point of view, this says that in order to prove that $A$ believes $\varphi$, we can prove $\varphi$ from $A$'s point of view.
 The elimination rule is more complicated.
-Ignoring the role of $g_1$ for the moment, it says that if you can prove $\believes{g_2}{\varphi}$, and you can use the assumption $\varphi \at g_2$ to prove $\psi$, then you can prove $\psi$.
+Ignoring the role of~$g_1$ for the moment, \textsc{BelievesE} says that if you can prove $\believes{g_2}{\varphi}$, you may use the assumption $\varphi \at g_2$ to prove $\psi$.
 Here, we're using a new piece of shorthand: $\believes{g}{\varphi}$ stands for a stack of modalities on top of $\varphi$, one for each part of $g$.
 Thus, this says that if you can prove that $g_2$ believes $\varphi$, and you can prove $\psi$ assuming that $g_2$ believes $\varphi$, then you can prove $\psi$ immediately.
 Adding in $g_1$ allows for more-flexible use of assumptions in the proof of $\believes{g_2}{\varphi}$, but necessitates adding that flexibility as requirement on the proof of $\psi$.
@@ -84,14 +87,14 @@ Adding in $g_1$ allows for more-flexible use of assumptions in the proof of $\be
 Finally, the last two rules say that $A$ has perfect knowledge about their own beliefs.
 First, \textsc{SelfDown} says that if $A$ believes that $A$ itself believes something, it is true.
 Second, \textsc{SelfUp} says that if $A$ believes something, then they believe that they believe it.
-In the context of beliefs, these both make perfect sense; as we will see later \todo{forward reference}, we will need to generalize this in order to match many communication topologies which we care about in practice.
+In the context of beliefs, these both make perfect sense; as we will see in Section~\ref{sec:lang-hier-chor}, we will need to generalize this in order to match many communication topologies which we care about in practice.
 
 \paragraph{From Doxastic to Authorization Logic}
 Authorization logics are doxastic logics with a notion of trust and communication among trusted lines.
-For our purposes, our authorization logic is parameterized by an additional preorder between agents, called \textsf{speaksfor}.
+For our purposes, authorization logic is parameterized by an additional preorder between agents, called \textsf{speaksfor}.
 Then, we add one rule to our doxastic logic, called \textsc{SpeaksforE} in Figure~\ref{fig:dox-rules}.
 This rule says that if $A$ speaks for $B$, and $A$ believes $\varphi$ (often written $A \mathrel{\textsf{says}} \varphi$ in authorization logics), then $B$ also believes $\varphi$.
-Intuitively, if $A$ speaks for $B$, then $A$ is willing to send its evidence for $\varphi$ with $B$, and $B$ is willing to incorporate $A$'s evidence into its own beliefs.
+Intuitively, if $A$ speaks for $B$, then $A$ is willing to send its evidence for $\varphi$ to $B$, and $B$ is willing to incorporate $A$'s evidence into its own beliefs.
 Thus, we can think of \textsc{SpeaksforE} as representing a message send in a concurrent system, very similar to the choreographic send-and-receive operation.
 
 
