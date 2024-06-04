@@ -41,7 +41,7 @@ ALLCLEANABLES := $(shell find . \( -name '*.aux'\
 			     -o -name '*.fdb_latexmk'\
 			     -o -name '*.xcp'\
 			     -o -name '*.xoj'\
-                             -o -name '*.lof' \) -type f -not -path "./submissions/*" -not -path "./.git/*" -not -name 'acmart.pdf')
+                             -o -name '*.lof' \) -type f -not -path "./paper/*" -not -path "./submissions/*" -not -path "./.git/*" -not -name 'acmart.pdf')
 
 CLEANABLES := $(shell find . \( -name '*.aux'\
 			     -o -name '\#*\#'\
@@ -58,4 +58,4 @@ CLEANABLES := $(shell find . \( -name '*.aux'\
 			     -o -name '*.rip'\
 			     -o -name '*.fdb_latexmk'\
 			     -o -name '*.xcp'\
-                             -o -name '*.lof' \) -type f -not -path "./submissions/*" -not -path "./.git/*")
+                             -o -name '*.lof' \) -type f -not -path "./submissions/*" -not -path "./.git/*" -not -path "./paper/*")
