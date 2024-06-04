@@ -1,0 +1,54 @@
+\section{Introduction}
+\label{sec:introduction}
+
+Choreographic and multitier programming model concurrent systems as containing a set number of interacting processes.
+Intuitively, these processes act as interacting agents, such as nodes in a distributed system.
+However, propositions-as-types models of choreographies~\cite{CarboneMS14} do not respect this structure, instead exploiting the linear structure of communication implicit in choreographies.
+The recent proliferation of \emph{functional} choreographic programming~\cite{HirschG22,GraversenHM23,CruzFilipeGLMP21}, however, suggests a different potential propositions-as-types interpretation: a non-linear logic with explicit agents.
+
+\emph{Doxastic logic}, the logic of beliefs, seems like a natural fit.
+Doxastic logics represent agents as modalities of belief.
+If the agent~$A$ believes the formula~$\varphi$, then $\square_A \varphi$ holds.
+Doxastic logics represent \emph{belief} rather than \emph{knowledge}, so $\square_A \varphi$ holding does not necessarily imply that $\varphi$ holds as this would imply that an agent is correct about all of their beliefs.
+This is the key difference between doxastic and \emph{epistemic} logics.
+
+In order for doxastic logics to serve as the other side of this propositions-as-types correspondence, we need to interpret formulae as types and proofs as data.
+We propose that most connectives have their standard intuitionistic interpretations, while we interpret $\square_A \varphi$ as saying that the process~$A$ has a $\varphi$.
+This fits with doxastic logic, rather than epistemic logic, as described above.
+
+However, there one major component of doxastic logics does not fit naturally into the global concurrent programming paradigm: nested beliefs.
+For instance, the formula $\mathop{\square_A} (\mathop{\square_B} \varphi)$ represents ``agent~$A$ believes that agent~$B$ believes~$\varphi$.''
+Current functional choreographic languages do not allow nested claims of ownership over data.%
+\footnote{PolyChor$\lambda$~\cite{GraversenHM23} uses a similar notion to represent delegation, though this does not seem to follow the logical laws of doxastic logic.
+Meanwhile, in unpublished work \citeauthor{Kavvos24} has been exploring an interpretation of doxastic logic where agent~$A$ has a remote pointer to $B$'s data~\cite{Kavvos24}.}
+For instance, in Pirouette, one of the first functional choreographic programming languages~\cite{HirschG22}, local data have types which are disjoint from choreographic data.
+Indeed, it is not entirely clear what it would mean for agent~$A$ to have beliefs about agent~$B$.
+However, note that because $\square_A$ represents a belief of $A$'s, there is no requirement that $A$'s beliefs about $B$ have any connection to $B$ at all.
+Thus, $A$'s version of $B$ can be viewed as its own, independent agent.
+
+With this view, agents are arranged in a forest topology, with each agent ``above'' its parent.
+While this breaks with global-view tradition, where processes have a fully connected topology where anyone can talk to anyone else, this hierarchical topology for processes is far from unnatural.
+For instance, in a distributed system where nodes can themselves be multithreaded, each node~$A$ can be represented by an agent, with each thread on~$A$ represented as an agent above $A$ in the tree.
+
+It would not make sense for nodes to be unable to communicate with one another, so we would like to be able to communicate between processes on the same level.
+However, no node~$A$ should be able to talk to another node~$B$'s thread without going through~$B$ itself.
+We model this as allowing communication between sibling nodes.
+This complicates the simple forest topology described earlier, since the children of every node form a fully connected topology.
+In other words, each node can communicate with its parent, its children, \emph{and} its siblings.
+We dub choreographic programming with this ``tree of interconnected processes'' topology \emph{hierarchical choreographic programming}.
+
+This leads to \emph{authorization logic}, a version of doxastic logic with explicit communication.
+However, authorization logic allows for more-subtle topologies by restricting which siblings may communicate.
+In particular, authorization logic contains a new judgment---$A \mathrel{\textsf{speaksfor}} B$---representing the ability of agents~$A$ and~$B$, who are at the same level in the tree, to communicate.
+Then, if $\square_A \varphi$ and $A \mathrel{\textsf{speaksfor}} B$, then $A$ can send its proof of $\varphi$ to $B$, allowing us to derive $\square_B \varphi$.
+We can thus think of \textsf{speaksfor} as a one-way channel---since $A$ can send to $B$, but not vice versa---and \textsf{speaksfor}-elimination as the choreographic ``send-and-receive'' primitive.
+
+This paper describes ongoing research into formalizing this connection between doxastic logics, especially authorization logics, and global concurrent programming.
+First, we describe Corps, a core calculus for hierarchical choreographic programming, allowing us to form the tree topology described above with explicit intra-level communication.
+We then provide a number of conjectures about Corps and its relationships to doxastic and authorization logics.
+By providing an explicit propositions-as-types interpretation of authorization logic in choreographies, we hope to be able to advance both technologies considerably.
+
+%%% Local Variables:
+%%% mode: latex
+%%% TeX-master: "conference"
+%%% End:

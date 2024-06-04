@@ -1,0 +1,104 @@
+\section{Background: Doxastic and Authorization Logics}
+\label{sec:backgr-doxast-auth}
+
+As described in Section~\ref{sec:introduction}, doxastic logics are modal logics of belief.
+In this section, we present the main rules of a simple authorization logic in Fitch style~\cite{Clouston18}.
+One rule requires reasoning about trust (modeled as a relation called \textsf{speaksfor}) and communication directly.
+This rule separates authorization logics from other doxastic logics.
+
+\begin{figure}
+  \centering
+  \begin{syntax}
+    \abstractCategory[Agents]{A, B}
+    \category[Generalized Agents]{g} \alternative{\diamond} \alternative{g \cdot A}
+    \category[Formulae]{\varphi, \psi}
+      \alternative{\top}
+      \alternative{\bot}
+      \alternative{\varphi \land \psi}
+      \alternative{\varphi \lor \psi}
+      \alternative{\varphi \to \psi}
+      \alternative{\believes{A}{\varphi}}
+    \category[Contexts]{\Gamma, \Delta}
+      \alternative{\cdot}
+      \alternative{\Gamma, \varphi \at g}
+      \alternative{\Gamma, \lock_g}
+  \end{syntax}
+  
+  \caption{Syntax of Doxastic Logic}
+  \label{fig:dox-syn}
+\end{figure}
+
+The syntax of doxastic logic formulae can be found in Figure~\ref{fig:dox-syn}.
+The syntax of the logic is parameterized on a set of \emph{agents} about which we wish to reason; we denote elements of this set with capital Latin characters like~$A$.
+The formulae (denoted with lower-case Greek letters like~$\varphi$) mostly consist of those of intuitionistic propositional logic, with their usual meanings.
+However, we also have the \emph{modality} $\believes{A}{}$, representing $A$'s beliefs.
+Thus, we should read $\believes{A}{\varphi}$ as ``$A$ believes $\varphi$.''
+
+The contexts (denoted by capital Greek letters like~$\Gamma$), however, are more unusual.
+Most logics use lists of formulae for their contexts, and then use structural rules (or their equivalent) to force those lists to act as sets.
+Here, we use sets of formulae tagged with \emph{generalized agents}, separated by similarly-tagged locks.
+Intuitively, a generalized agent $g$ represents beliefs-of-beliefs: the generalized agent $\diamond$ is ground truth, $\diamond \cdot A$ is the agent $A$, $\diamond \cdot A \cdot B$ is $A$'s beliefs about $B$, and so on.
+Thus, a generalized agent represents a path up the tree topology described in Section~\ref{sec:introduction}.
+Then $\varphi \at g$ represents that $g$ believes $\varphi$---$\!\!{}\at \diamond \cdot A$ internalizes $\believes{A}{}$ in the same way that commas internalize conjunctions.
+The context $\Gamma, \lock_g$ represents $g$'s view of the context $\Gamma$---$g$ can access its own beliefs, but not the beliefs of others.
+
+Generalized agents are essentially (snoc) lists of agents, and thus form a monoid in a standard way.
+We write the monoid action as $\join$.
+In particular, $$g \join g' = \left\{\begin{array}{ll} g & \text{if $g' = \diamond$}\\ (g \join g'') \cdot A & \text{if $g' = g'' \cdot A$}\end{array}\right.$$
+We can then compute the locks in a context.
+We consider a judgment $\Gamma \vdash \varphi$ to be a proof of $\varphi$ ``from $\locks{\Gamma}$'s point of view.''
+$$\locks{\Delta} = \left\{\begin{array}{ll} \diamond & \text{if $\Delta = \cdot$}\\ \locks{\Delta'} & \text{if $\Delta = \Delta', \varphi \at g$}\\ \locks{\Delta'} \join g & \text{if $\Delta = \Delta', \lock_g$}\end{array}\right.$$
+Contexts also use the monoid action freely to reason about locks; in other words, contexts obey the equations $\Gamma, \lock_\diamond = \Gamma$ and $\Gamma, \lock_{g_1}, \lock_{g_2} = \Gamma, \lock_{g_1 \join g_2}$.
+
+\begin{figure}
+  \centering
+
+  \begin{mathpar}
+    \infer*[left=Axiom]{\locks{\Delta} = g }{\Gamma, \varphi \at g, \Delta \vdash \varphi} \\
+    \infer*[left=BelievesI]{\Gamma, \lock_A \vdash \varphi}{\Gamma \vdash \believes{A}{\varphi}}\and
+    \infer*[right=BelievesE]{\Gamma, \lock_{g_1} \vdash \believes{g_2}{\varphi} \\ \Gamma, \varphi \at g_1 \mathbin{+\!\!+} g_2 \vdash \psi}{\Gamma \vdash \psi} \and
+    \infer*[left=SelfDown]{\Gamma \vdash \believes{A}{(\believes{A}{\varphi})}}{\Gamma \vdash \believes{A}{\varphi}} \and
+    \infer*[right=SelfUp]{\Gamma \vdash \believes{A}{\varphi}}{\Gamma \vdash \believes{A}{(\believes{A}{\varphi})}}\\
+    \infer*[right=SpeaksforE]{A \mathrel{\textsf{speaksfor}} B\\ \Gamma \vdash \believes{A}{\varphi}}{\Gamma \vdash \believes{B}{\varphi}}
+  \end{mathpar}
+  
+  \caption{Selected Rules for Doxastic Logic and Authorization Logic}
+  \label{fig:dox-rules}
+\end{figure}
+
+Figure~\ref{fig:dox-rules} contains selected rules of authorization logic.
+(The rule \textsc{SpeaksforE} is a rule of authorization logic not found in standard doxastic logic.)
+The rules presented here define the behavior of the $\believes{A}{}$ modality.
+Only the standard rules of intuitionistic propositional logic remain.
+
+The first rule is \textsc{Axiom}, which allows the use of an assumption~$\varphi \at g$.
+In order to use such an assumption, we must know that the locks to the left of the assumption form $g$.
+In other words, we must know that the proof is ``from $g$'s point of view,'' and thus it is appropriate to assume $\varphi$ from the fact that $g$ believes it.
+
+The next two rules are the introduction and elimination rules for the $\believes{A}{}$ modality.
+The first says that we can prove $\believes{A}{\varphi}$ if we can prove $\varphi$ with an $A$-labeled lock.
+Since we can view locking a context as taking on $A$'s point of view, this says that in order to prove that $A$ believes $\varphi$, we can prove $\varphi$ from $A$'s point of view.
+The elimination rule is more complicated.
+Ignoring the role of~$g_1$ for the moment, \textsc{BelievesE} says that if you can prove $\believes{g_2}{\varphi}$, you may use the assumption $\varphi \at g_2$ to prove $\psi$.
+Here, we're using a new piece of shorthand: $\believes{g}{\varphi}$ stands for a stack of modalities on top of $\varphi$, one for each part of $g$.
+Thus, this says that if you can prove that $g_2$ believes $\varphi$, and you can prove $\psi$ assuming that $g_2$ believes $\varphi$, then you can prove $\psi$ immediately.
+Adding in $g_1$ allows for more-flexible use of assumptions in the proof of $\believes{g_2}{\varphi}$, but necessitates adding that flexibility as requirement on the proof of $\psi$.
+
+Finally, the last two rules say that $A$ has perfect knowledge about their own beliefs.
+First, \textsc{SelfDown} says that if $A$ believes that $A$ itself believes something, it is true.
+Second, \textsc{SelfUp} says that if $A$ believes something, then they believe that they believe it.
+In the context of beliefs, these both make perfect sense; as we will see in Section~\ref{sec:lang-hier-chor}, we will need to generalize this in order to match many communication topologies which we care about in practice.
+
+\paragraph{From Doxastic to Authorization Logic}
+Authorization logics are doxastic logics with a notion of trust and communication among trusted lines.
+For our purposes, authorization logic is parameterized by an additional preorder between agents, called \textsf{speaksfor}.
+Then, we add one rule to our doxastic logic, called \textsc{SpeaksforE} in Figure~\ref{fig:dox-rules}.
+This rule says that if $A$ speaks for $B$, and $A$ believes $\varphi$ (often written $A \mathrel{\textsf{says}} \varphi$ in authorization logics), then $B$ also believes $\varphi$.
+Intuitively, if $A$ speaks for $B$, then $A$ is willing to send its evidence for $\varphi$ to $B$, and $B$ is willing to incorporate $A$'s evidence into its own beliefs.
+Thus, we can think of \textsc{SpeaksforE} as representing a message send in a concurrent system, very similar to the choreographic send-and-receive operation.
+
+
+%%% Local Variables:
+%%% mode: LaTeX
+%%% TeX-master: "conference"
+%%% End:

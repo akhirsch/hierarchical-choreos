@@ -1,0 +1,49 @@
+\documentclass[acmsmall,nonacm]{acmart}
+
+\settopmatter{printfolios=true,printccs=false,printacmref=false}
+
+\acmJournal{PACMPL}
+\acmVolume{University at Buffalo, SUNY Technical Report}
+\acmNumber{}
+\acmArticle{}
+\acmYear{2021}
+\acmMonth{11}
+\startPage{1}
+
+\setcopyright{ccby}
+
+\bibliographystyle{ACM-Reference-Format}
+\citestyle{acmauthoryear}
+
+\input{includes}
+\input{macros}
+
+\title[Corps]{{\small University at Buffalo Technical Report:}\\ Corps: A Core Calculus of Hierarchical Choreographic Programming}
+\date{\today}
+
+\author{Andrew K. Hirsch}
+\orcid{0000-0003-2518-614X}
+\affiliation{
+  \institution{University at Buffalo}
+  \city{Buffalo}
+  \country{USA}
+}
+\email{akhirsch@buffalo.edu}
+
+\begin{document}
+
+% PACM Required stuff here
+\begin{abstract}
+  \input{abstract}
+\end{abstract}
+
+\maketitle
+
+\input{sections}
+\bibliography{main}  
+\end{document}  
+
+%%% Local Variables:
+%%% mode: latex
+%%% TeX-master: t
+%%% End:

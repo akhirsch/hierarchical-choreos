@@ -1,0 +1,95 @@
+\section{A Language for Hierarchical Choreographic Programming}
+\label{sec:lang-hier-chor}
+
+\begin{figure}
+  \centering
+  \begin{syntax}
+    \category[Types]{\tau}
+    \alternative{\unit}
+    \alternative{\void}
+    \alternative{\believes{A}{\tau}}
+    \alternative{\tau_1 \times \tau_2}
+    \alternative{\tau_1 + \tau_2}
+    \alternative{\tau_1 \to \tau_2}
+    \category[Expressions]{e}
+    \alternative{x}
+    \alternative{A.e}
+    \alternative{\letl{g_1}{g_2}{x}{e_1}{e_2}}\\
+    \alternative{\send{e}{A}}
+    \alternative{\up{g}{e}}
+    \alternative{\down{g}{e}}
+  \end{syntax}
+  \begin{mathpar}
+    \infer*[left=Axiom]{
+      \locks{\Delta} = g
+    } {
+      \Gamma, x : \tau @ g, \Delta \vdash x : \tau
+    }\\
+    \infer*[left=BelievesI]{
+      \Gamma, \lock_A \vdash e : \tau
+    }{
+      \Gamma \vdash A.e : \believes{A}{\tau}
+    }\and
+    \infer*[right=BelievesE]{
+      \Gamma, \lock_{g_1} \vdash e_1 : \believes{g_2}{\tau}\\
+      \Gamma, x : \tau \at g_1 \join g_2 \vdash e_2 : \sigma
+    }{
+      \Gamma \vdash \letl{g_1}{g_2}{x}{e_1}{e_2} : \sigma
+    }\\
+    \infer*[right=Down]{
+      \Gamma \vdash e : \believes{g}{\tau}\\
+      \candown{\locks{\Gamma}}{g}
+    }{
+      \Gamma \vdash \down{g}{e} : \tau
+    }\and
+    \infer*[left=Up]{
+      \Gamma \vdash e : \tau\\
+      \canup{\locks{\Gamma}}{g}
+    }{
+      \Gamma \vdash \up{g}{e} : \believes{g}{\tau}
+    }\\
+    \infer*[left=Send]{
+      \Gamma \vdash e : \believes{g_1}{\tau}\\
+      \cansend{g_1}{g_2}
+    }{
+      \Gamma \vdash \send{e}{g_2} : \believes{g_2}{\tau}
+    }\and
+  \end{mathpar}
+  \caption{Corp Selected Syntax and Typing Rules}
+  \label{fig:choreo-types}
+\end{figure}
+
+So far, we have focused on the purely logical presentation of doxastic and authorization logics.
+We now present Corps (short for ``Corps de Ballet,'' a rank in ballet troupes), a language for \emph{hierarchical choreographic programming}.
+The type syntax, along with selected pieces of the program syntax and the corresponding typing rules, can be found in Figure~\ref{fig:choreo-types}.
+Every type connective has its standard interpretation in logic.
+For instance, the type connective~$\times$ corresponds to the logical connective~$\land$.
+The only exception is $\believes{A}{\tau}$, which represents a $\tau$ stored on the agent~$A$ located one level up in the hierarchy.
+
+We can view a typing judgment $\Gamma \vdash e : \tau$ as saying that $e$ computes a $\tau$ on the process $\locks{\Gamma}$.
+From this perspective, the \textsc{Axiom} rule says that we can use $x$ as a $\tau$ if the current process has access to a $\tau$ named $x$ in the context.
+Furthermore, the \textsc{BelievesI}~rule says that to compute a $\believes{A}{\tau}$ on the process $\locks{\Gamma}$, we need to compute a $\tau$ on $\locks{\Gamma} \cdot A$.
+The \textsc{BelievesE}~rule says that if we can compute a $\believes{g_2}{\tau}$ on the process $g_1$, then we can use the result of that computation as a $\tau$ on the process $g_1 \join g_2$.
+
+The remaining rules correspond not only to similar rules in logic, but to explicit communication.
+The rule~\textsc{Down} corresponds to the rule~\textsc{SelfDown} in doxastic logic.
+However, as we can see here, it is more general than the original \textsc{SelfDown}~rule.
+Just as authorization logic is parameterized by the \textsf{speaksfor} relation between agents to determine when they can communicate, Corps is parameterized by three similar relations between generalized agents.
+Here, the relation~$\candownname$ determines when communication is allowed \emph{down the tree}.
+To recover the \textsc{SelfDown}~rule, we can set $\candown{g_1}{g_2} \overset{\Delta}{\iff} g_1 = g \cdot A \land g_2 = g \cdot A \cdot A$; that is, $g_2$ is allowed to communicate down to $g_1$ only if $g_1$ is some agent~$A$ (possibly up the tree by some path), and $g_2$ is the agent named~$A$ directly above $g_1$.
+This allows communication down the tree only from $A$'s beliefs about itself.
+Similarly, the rule~\textsc{Up} corresponds to the original \textsc{SelfUp}~rule, but generalized with the $\canupname$~relation controlling when communication is allowed up the tree.
+Finally, the rule~\textsc{Send} corresponds directly to the original \textsc{SpeaksforE}~rule, with \cansendname{} corresponding to \textsf{speaksfor}.
+
+By setting different meanings for \candownname{}, \canupname{}, and \cansendname{}, we can get very different topologies all within the hierarchical style.
+For instance, to get the traditional fully-connected topology between sibling nodes for choreographies, we need only set $\cansend{g_1}{g_2} \overset{\Delta}{\iff} \textsf{True}$.
+Many of the traditional settings for these relations only involve a postfix of the generalized agent, similar to the traditional setting for \candownname{} discussed earlier.
+This creates a uniform set of policies: every agent allows its children of the same name to communicate both with itself and with each other.
+However, the generality of these relations allows for different (generalized) agents to have different policies.
+We expect that many topologies that arise in practice will not match the requirement that a node named~$A$ only communicate with a thread also named~$A$, leading to this generalization.
+
+
+%%% Local Variables:
+%%% mode: LaTeX
+%%% TeX-master: "conference"
+%%% End:

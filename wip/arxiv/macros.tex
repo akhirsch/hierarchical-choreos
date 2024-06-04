@@ -1,0 +1,68 @@
+% Notes
+\newcommand{\newcommenter}[3]{%
+  \newcommand{#1}[1]{%
+    \textcolor{#2}{\small\textsf{[#3: {##1}]}}%
+  }%
+}
+\newcommenter{\akh}{purple}{AKH}
+\newcommenter{\todo}{red}{TODO}
+
+% AMSThm Setup
+\theoremstyle{theorem}
+\newtheorem{thm}{Theorem}
+\newtheorem{lem}{Lemma}
+\newtheorem{cor}{Corollary}
+\theoremstyle{definition}
+\newtheorem{defn}{Definition}
+\newtheorem{ex}{Example}
+
+\newcommand{\join}{\ensuremath{\mathbin{+\!\!+}}}
+
+\newcommand{\believes}[2]{\ensuremath{\mathop{\square_{#1}} #2}}
+
+\newcommand{\uu}{\ensuremath{(\,)}}
+
+\newcommand{\letl}[5]{\textsf{let}_{#1}\;#2.#3 \mathrel{\coloneqq} #4 \mathrel{\textsf{in}} #5}
+
+\newcommand{\fun}[3]{\textsf{fun}\;#1(#2) \mathrel{\coloneqq} #3}
+\newcommand{\lam}[2]{\lambda#1.\;#2}
+\newcommand{\appfun}[2]{#1\;#2}
+
+\newcommand{\projname}{\textsf{proj}}
+\newcommand{\projl}[1]{\appfun{\projname_1}{#1}}
+\newcommand{\projr}[1]{\appfun{\projname_2}{#1}}
+
+\newcommand{\inl}[1]{\appfun{\textsf{inl}}{#1}}
+\newcommand{\inr}[1]{\appfun{\textsf{inr}}{#1}}
+\newcommand{\case}[5]{\ensuremath{\textsf{case}\;#1 \mathrel{\textsf{of}} \inl{#2} \Rightarrow #3;\; \inr{#4} \Rightarrow #5}}
+
+\newcommand{\casev}[1]{\ensuremath{\textsf{case}\;#1 \mathrel{\textsf{of}} \_ \Rightarrow \bot}}
+
+\newcommand{\send}[2]{#1 \mathbin{\leadsto} #2}
+
+\newcommand{\upname}{\textsf{up}}
+\newcommand{\up}[2]{\appfun{\upname_{#1}}{#2}}
+\newcommand{\downname}{\textsf{down}}
+\newcommand{\down}[2]{\appfun{\downname_{#1}}{#2}}
+
+\newcommand{\unit}{\textsf{unit}\xspace}
+\newcommand{\void}{\textsf{void}\xspace}
+
+\newcommand{\lock}{\text{\faLock}}
+\newcommand{\at}{\ensuremath{\mathrel{@}}}
+\newcommand{\locks}[1]{\text{locks}(#1)}
+
+\newcommand{\reps}[2]{#1 \mathrel{\vartriangleright} #2}
+\newcommand{\cansendname}{\text{CanSend}}
+\newcommand{\cansend}[2]{\cansendname(#1, #2)}
+\newcommand{\candownname}{\text{CanDown}}
+\newcommand{\candown}[2]{\candownname(#1, #2)}
+\newcommand{\canupname}{\text{CanUp}}
+\newcommand{\canup}[2]{\canupname(#1, #2)}
+
+
+
+%%% Local Variables:
+%%% mode: latex
+%%% TeX-master: "conference"
+%%% End:
