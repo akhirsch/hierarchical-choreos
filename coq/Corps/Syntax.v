@@ -1,23 +1,26 @@
 Require Import Base.EqBool.
 Require Import Coq.Lists.List.
 Require Import Lia.
+Require Import Coq.Classes.RelationClasses.
+Import ListNotations.
 
+
+Set Implicit Arguments.
 Section CorpsSyntax.
 
-  Context (PName : Type) `{EqBool PName}.
-  Set Implicit Arguments.
+  Context {PName : Type} `{EqBool PName}.
   
   Section CorpsTypes.
 
-    Inductive Typ : Type :=
+    Inductive type : Type :=
       UnitT
     | VoidT
-    | AtT : PName -> Typ -> Typ
-    | TimesT : Typ -> Typ -> Typ
-    | PlusT : Typ -> Typ -> Typ
-    | ArrT : Typ -> Typ -> Typ.
+    | AtT : PName -> type -> type
+    | TimesT : type -> type -> type
+    | PlusT : type -> type -> type
+    | ArrT : type -> type -> type.
 
-    Fixpoint typ_eqb (t1 t2 : Typ) : bool :=
+    Fixpoint typ_eqb (t1 t2 : type) : bool :=
       match t1, t2 with
       | UnitT, UnitT => true
       | VoidT, VoidT => true
@@ -28,7 +31,7 @@ Section CorpsSyntax.
       | _, _ => false
       end.
 
-    #[global] Program Instance TypEqB : EqBool Typ :=
+    #[global] Program Instance TypEqB : EqBool type :=
       {
         eqb := typ_eqb
       }.
@@ -41,27 +44,275 @@ Section CorpsSyntax.
 
   End CorpsTypes.
 
+  Section Modality.
+
+    Inductive mod : Type :=
+    | base : mod
+    | cons (m : mod) (p : PName) : mod.
+
+    Fixpoint mod_eqb (m1 m2 : mod) : bool :=
+      match m1, m2 with
+      | base, base => true
+      | cons m1 p, cons m2 q => eqb p q && mod_eqb m1 m2
+      | _, _ => false
+      end.
+    #[global] Program Instance ModEqB : EqBool mod :=
+      {
+        eqb := mod_eqb
+      }.
+    Next Obligation.
+      revert y H0; solve_eqb_liebniz x.
+    Defined.
+    Next Obligation.
+      solve_eqb_refl.
+    Defined.
+
+    Fixpoint mod_size (m : mod) : nat :=
+      match m with
+      | base => 0
+      | cons m _ => S (mod_size m)
+      end.
+
+    Lemma mod_size_zero_to_base : forall m, mod_size m = 0 -> m = base.
+    Proof using.
+      intro m; destruct m; cbn; intro eq; [reflexivity | inversion eq].
+    Qed.
+
+    Fixpoint mod_app (m1 m2 : mod) : mod :=
+      match m2 with
+      | base => m1
+      | cons m2 p => cons (mod_app m1 m2) p
+      end.
+
+    Lemma mod_app_comm : forall m1 m2 m3, mod_app (mod_app m1 m2) m3 = mod_app m1 (mod_app m2 m3).
+    Proof using.
+      intros m1 m2 m3; revert m1 m2; induction m3 as [| m3' IHm3' p]; intros m1 m2; cbn.
+      - reflexivity.
+      - f_equal; apply IHm3'.
+    Qed.
+
+    Lemma mod_app_base : forall m, mod_app m base = m. Proof using. intros m; reflexivity. Qed.
+
+    Lemma mod_base_app : forall m, mod_app base m = m.
+    Proof using.
+      intro m; induction m; cbn; [|rewrite IHm]; reflexivity.
+    Qed.
+
+    Lemma mod_app_size : forall m1 m2, mod_size (mod_app m1 m2) = mod_size m1 + mod_size m2.
+    Proof using.
+      intros m1 m2; revert m1; induction m2 as [| m2' IHm2' p]; intro m1; cbn;
+        [|rewrite IHm2']; lia.
+    Qed.
+
+    Lemma mod_app_id_inv : forall m1 m2, m1 = mod_app m1 m2 -> m2 = base.
+    Proof using.
+      intros m1 m2 eq.
+      apply mod_size_zero_to_base.
+      apply (f_equal mod_size) in eq; rewrite mod_app_size in eq.
+      lia.
+    Qed.
+
+    Lemma mod_app_base_inv : forall m1 m2, mod_app m1 m2 = base -> m1 = base /\ m2 = base.
+    Proof using.
+      intros m1 m2 eq; destruct m1; destruct m2; try (inversion eq; fail); split; reflexivity.
+    Qed.
+
+    Definition proc_to_mod (p : PName) : mod := cons base p.
+
+    Lemma proc_to_mod_inj : forall p q, proc_to_mod p = proc_to_mod q -> p = q.
+    Proof using.
+      intros p q H0; unfold proc_to_mod in H0; inversion H0; reflexivity.
+    Qed.
+
+    #[global] Coercion proc_to_mod : PName >-> mod.
+
+    Inductive PrefixOf : mod -> mod -> Prop :=
+    | PO_refl (m : mod) : PrefixOf m m
+    | PO_step {m1 m2 : mod} (pf : PrefixOf m1 m2) (p : PName)
+      : PrefixOf m1 (cons m2 p).
+
+    #[global] Instance PrefixOfRefl : Reflexive PrefixOf := PO_refl.
+
+    Lemma PrefixOf_peel : forall m1 m2, PrefixOf m1 m2 -> exists m2', m2 = mod_app m1 m2'.
+    Proof using.
+      intros m1 m2 pfx; induction pfx.
+      - exists base; reflexivity.
+      - destruct IHpfx as [m2' eq]; subst.
+        exists (cons m2' p); reflexivity.
+    Qed.
+
+    Lemma PrefixOf_antisym : forall m1 m2, PrefixOf m1 m2 -> PrefixOf m2 m1 -> m1 = m2.
+    Proof using.
+      intros m1 m2 pfx1 pfx2.
+      apply PrefixOf_peel in pfx1; destruct pfx1 as [m1' eq1].
+      apply PrefixOf_peel in pfx2; destruct pfx2 as [m2' eq2].
+      subst.
+      rewrite mod_app_comm in eq2. apply mod_app_id_inv in eq2. apply mod_app_base_inv in eq2; destruct eq2; subst. cbn. reflexivity.
+    Qed.
+
+    #[global] Instance PrefixOfAntisym : Antisymmetric mod eq PrefixOf := PrefixOf_antisym.
+
+    Lemma PrefixOf_trans : forall m1 m2 m3, PrefixOf m1 m2 -> PrefixOf m2 m3 -> PrefixOf m1 m3.
+    Proof using.
+      intros m1 m2 m3 pfx1 pfx2; revert m1 pfx1; induction pfx2 as [m2 | m2 m3 pf IHpf p];
+        intros m1 pfx1.
+      - exact pfx1.
+      - apply PO_step; apply IHpf; exact pfx1.
+    Qed.
+
+    #[global] Instance PrefixOfTrans : Transitive PrefixOf := PrefixOf_trans.
+
+    Lemma PrefixOf_size : forall m1 m2, PrefixOf m1 m2 -> mod_size m1 <= mod_size m2.
+    Proof using.
+      intros m1 m2 pfx; induction pfx; cbn; lia.
+    Qed.
+
+    Fixpoint prefixb (m1 m2 : mod) : bool :=
+      if eqb m1 m2
+      then true
+      else match m2 with
+           | base => false
+           | cons m2' _ => prefixb m1 m2'
+           end.
+
+    Lemma prefixb_refl : forall m, prefixb m m = true.
+    Proof using.
+      intro m; destruct m; cbn; eq_bool; reflexivity.
+    Qed.
+
+    Lemma PrefixOf_prefixb : forall m1 m2, PrefixOf m1 m2 -> prefixb m1 m2 = true.
+    Proof using.
+      intros m1 m2 pfx; induction pfx; [apply prefixb_refl|].
+      cbn; eq_bool; subst; [reflexivity| assumption].
+    Qed.
+
+    Lemma prefixb_PrefixOf : forall m1 m2, prefixb m1 m2 = true -> PrefixOf m1 m2.
+    Proof using.
+      intros m1 m2; revert m1; induction m2 as [| m2' IHm2' p]; intros m1 eq; cbn in eq;
+        eq_bool; subst; try (constructor; auto; fail).
+      inversion eq.
+    Qed.
+
+    Theorem PrefixOf_dec : forall m1 m2, {PrefixOf m1 m2} + {~ PrefixOf m1 m2}.
+    Proof using H.
+      intros m1 m2; destruct (prefixb m1 m2) eqn:eq.
+      left; apply prefixb_PrefixOf; exact eq.
+      right; intro H'; apply PrefixOf_prefixb in H'; rewrite H' in eq; inversion eq.
+    Defined.
+
+    Theorem PrefixOf_app : forall m1 {m2 m3}, PrefixOf m2 m3 -> PrefixOf (mod_app m1 m2) (mod_app m1 m3).
+    Proof using.
+      intros m1 m2 m3 pfx; revert m1; induction pfx as [m2 | m2 m3 pf IHpf p]; intro m1.
+      - reflexivity.
+      - cbn; constructor; apply IHpf.
+    Qed.
+
+    Fixpoint base_Prefix (m : mod) : PrefixOf base m :=
+      match m with
+      | base => PO_refl base
+      | cons m p => PO_step (base_Prefix m) p
+      end.
+
+  End Modality.
+
+
+  Section Contexts.
+
+    Record Ctxt :=
+      {
+        vars : nat -> mod * type;
+        locks : nat -> mod;
+        all_locks : mod;
+        locks_mono : forall n m, n <= m -> PrefixOf (locks n) (locks m);
+        locks_bound : forall n, PrefixOf (locks n) all_locks
+      }.
+    
+    Definition add_lock (Γ : Ctxt) (m : mod) : Ctxt :=
+      {|
+        vars n := vars Γ n;
+        locks n := mod_app m (locks Γ n);
+        all_locks := mod_app m (all_locks Γ);
+        locks_mono := fun j k leq => PrefixOf_app m (locks_mono Γ leq);
+        locks_bound := fun n => PrefixOf_app m (locks_bound Γ n); 
+      |}.
+
+    Program Definition add_var (Γ : Ctxt) (m : mod) (τ : type) : Ctxt :=
+      {|
+        vars n :=
+          match n with
+          | 0 => (m, τ)
+          | S n' => vars Γ n'
+          end;
+        locks n :=
+          match n with
+          | 0 => base
+          | S n' => locks Γ n'
+          end;
+        all_locks := all_locks Γ;
+      |}.
+    Next Obligation.
+      induction H0. destruct n; reflexivity.
+      destruct n. apply base_Prefix.
+      apply locks_mono; lia.
+    Defined.
+    Next Obligation.
+      destruct n; [apply base_Prefix | apply locks_bound].
+    Qed.
+
+    Inductive FiniteCtxt : Type :=
+    | emptyFC : FiniteCtxt
+    | varFC (m : mod) (τ : type) (Δ : FiniteCtxt) : FiniteCtxt
+    | lockFC (m : mod) (Δ : FiniteCtxt) : FiniteCtxt.
+
+    Fixpoint FiniteCtxt_eqb (Γ Δ : FiniteCtxt) : bool :=
+      match Γ, Δ with
+      | emptyFC, emptyFC => true
+      | varFC m1 τ1 Γ', varFC m2 τ2 Δ' => eqb m1 m2 && eqb τ1 τ2 && FiniteCtxt_eqb Γ' Δ'
+      | lockFC m1 Γ', lockFC m2 Δ' => eqb m1 m2 && FiniteCtxt_eqb Γ' Δ'
+      | _, _ => false 
+      end.
+
+    #[global] Program Instance FiniteCtxtEqBool : EqBool FiniteCtxt :=
+      {
+        eqb := FiniteCtxt_eqb;
+      }.
+    Next Obligation.
+      revert y H0; solve_eqb_liebniz x.
+    Defined.
+    Next Obligation.
+      solve_eqb_refl.
+    Defined.
+
+    Fixpoint addFiniteCtxt (Γ : Ctxt) (Δ : FiniteCtxt) : Ctxt :=
+      match Δ with
+      | emptyFC => Γ
+      | varFC m τ Δ => addFiniteCtxt (add_var Γ m τ) Δ
+      | lockFC m Δ => addFiniteCtxt (add_lock Γ m) Δ
+      end.
+    
+  End Contexts.
+
   Section CorpsTerms.
 
-    Inductive Expr : Type :=
-      var : nat -> Expr
-    | uu : Expr
-    | atE (p : PName) (e : Expr) : Expr
-    | letAt (p : PName) (e1 e2 : Expr) : Expr
-    | pair (e1 e2 : Expr) : Expr
-    | pi1 (e : Expr)
-    | pi2 (e : Expr)
-    | inl (e : Expr)
-    | inr (e : Expr)
-    | caseE (e1 e2 e3 : Expr)
-    | efql (e : Expr) (* ex falso quod libet; exfalso is taken by coq *)
-    | lam (t : Typ) (e : Expr)
-    | app (e1 e2 : Expr)
-    | send (e : Expr) (X : list nat) (p : PName)
-    | up (e : Expr) (X : list nat)
-    | down (e : Expr) (X : list nat).
+    Inductive expr : Type :=
+      var : nat -> expr
+    | uu : expr
+    | atE (p : PName) (e : expr) : expr
+    | letAt (p : PName) (e1 e2 : expr) : expr
+    | pair (e1 e2 : expr) : expr
+    | pi1 (e : expr)
+    | pi2 (e : expr)
+    | inl (e : expr)
+    | inr (e : expr)
+    | caseE (e1 e2 e3 : expr)
+    | efql (e : expr) (* ex falso quod libet; exfalso is taken by coq *)
+    | lam (t : type) (e : expr)
+    | appE (e1 e2 : expr)
+    | send (e : expr) (p : PName) (Δ : FiniteCtxt) (q : PName)
+    | up (e : expr) (p : PName) (Δ : FiniteCtxt)
+    | down (e : expr) (p : PName) (Δ : FiniteCtxt).
 
-    Fixpoint expr_eqb (e1 e2 : Expr) : bool :=
+    Fixpoint expr_eqb (e1 e2 : expr) : bool :=
       match e1, e2 with
       | var n, var m => eqb n m
       | uu, uu => true
@@ -76,10 +327,10 @@ Section CorpsSyntax.
           expr_eqb e11 e21 && expr_eqb e12 e22 && expr_eqb e13 e23
       | efql e1, efql e2 => expr_eqb e1 e2
       | lam t1 e1, lam t2 e2 => eqb t1 t2 && expr_eqb e1 e2
-      | app e11 e12, app e21 e22 => expr_eqb e11 e21 && expr_eqb e12 e22
-      | send e1 X1 p, send e2 X2 q => expr_eqb e1 e2 && eqb X1 X2 && eqb p q
-      | up e1 X1, up e2 X2 => expr_eqb e1 e2 && eqb X1 X2
-      | down e1 X1, down e2 X2 => expr_eqb e1 e2 && eqb X1 X2
+      | appE e11 e12, appE e21 e22 => expr_eqb e11 e21 && expr_eqb e12 e22
+      | send e1 p1 Δ1 q1, send e2 p2 Δ2 q2 => expr_eqb e1 e2 && eqb Δ1 Δ2 && eqb p1 p2 && eqb q1 q2
+      | up e1 p Δ1, up e2 q Δ2 => expr_eqb e1 e2 && eqb Δ1 Δ2 && eqb p q
+      | down e1 p Δ1, down e2 q Δ2 => expr_eqb e1 e2 && eqb Δ1 Δ2 && eqb p q
       | _, _ => false 
       end.
 
@@ -93,7 +344,7 @@ Section CorpsSyntax.
       intro x; solve_eqb_refl.
     Qed.
     
-    #[global] Instance ExprEqBool : EqBool Expr :=
+    #[global] Instance exprEqBool : EqBool expr :=
       {
         eqb := expr_eqb;
         eqb_liebniz := expr_eqb_liebniz;
@@ -138,10 +389,10 @@ Section CorpsSyntax.
         forall m, m < S n -> renup ξ m = m.
     Proof using.
       intros ξ n id_bel m m_le_n; destruct m; cbn; [reflexivity|].
-      apply Arith_prebase.lt_S_n in m_le_n; rewrite (id_bel m m_le_n); reflexivity.
+      rewrite id_bel; [reflexivity | lia].
     Qed.
 
-    Fixpoint ren (e : Expr) (ξ : renaming) : Expr :=
+    Fixpoint ren (e : expr) (ξ : renaming) : expr :=
       match e with
       | var x => var (ξ x)
       | uu => uu
@@ -155,10 +406,10 @@ Section CorpsSyntax.
       | caseE e1 e2 e3 => caseE (ren e1 ξ) (ren e2 (renup ξ)) (ren e3 (renup ξ))
       | efql e => efql (ren e ξ)
       | lam t e => lam t (ren e (renup ξ))
-      | app e1 e2 => app (ren e1 ξ) (ren e2 ξ)
-      | send e X p => send (ren e ξ) X p
-      | up e X => up (ren e ξ) X
-      | down e X => down (ren e ξ) X
+      | appE e1 e2 => appE (ren e1 ξ) (ren e2 ξ)
+      | send e p Δ q => send (ren e ξ) p Δ q
+      | up e p Δ => up (ren e ξ) p Δ
+      | down e p Δ => down (ren e ξ) p Δ
       end.
     
     Lemma ren_ext : forall (ξ1 ξ2 : renaming),
@@ -206,7 +457,7 @@ Section CorpsSyntax.
 
   Section Substitution.
 
-    Definition substitution : Type := nat -> Expr.
+    Definition substitution : Type := nat -> expr.
     Definition id_substitution : substitution := var.
 
     Definition substup (σ : substitution) : substitution :=
@@ -254,10 +505,10 @@ Section CorpsSyntax.
     Proof using.
       intros σ n id_below m m_lt_Sn; destruct m; cbn; [reflexivity|].
       rewrite id_below; [reflexivity|].
-      apply Arith_prebase.lt_S_n; assumption.
+      lia.
     Qed.
     
-    Fixpoint subst (e : Expr) (σ : substitution) : Expr :=
+    Fixpoint subst (e : expr) (σ : substitution) : expr :=
       match e with
       | var x => σ x
       | uu => uu
@@ -272,10 +523,10 @@ Section CorpsSyntax.
           caseE (subst e1 σ) (subst e2 (substup σ)) (subst e3 (substup σ))
       | efql e => efql (subst e σ)
       | lam t e => lam t (subst e (substup σ))
-      | app e1 e2 => app (subst e1 σ) (subst e2 σ)
-      | send e X p => send (subst e σ) X p
-      | up e X => up (subst e σ) X
-      | down e X => down (subst e σ) X
+      | appE e1 e2 => appE (subst e1 σ) (subst e2 σ)
+      | send e p Δ q => send (subst e σ) p Δ q
+      | up e p Δ => up (subst e σ) p Δ
+      | down e p Δ => down (subst e σ) p Δ
       end.
 
     Lemma subst_ext : forall σ1 σ2,
@@ -382,32 +633,35 @@ Section CorpsSyntax.
 
   Section Closure.
 
-    Inductive closed_above : Expr -> nat -> Prop :=
-    | var_ca (n m : nat) (n_lt_m : n < m) : closed_above (var n) m
+    Inductive closed_above : expr -> nat -> Prop :=
+    | var_ca {n m : nat} (n_lt_m : n < m) : closed_above (var n) m
     | uu_ca (n : nat) : closed_above uu n
-    | atE_ca (p : PName) (e : Expr) (n : nat) (pf : closed_above e n) : closed_above (atE p e) n
-    | letAt_ca (p : PName) (e1 e2 : Expr) (n : nat)
+    | atE_ca (p : PName) {e : expr} {n : nat} (pf : closed_above e n) : closed_above (atE p e) n
+    | letAt_ca (p : PName) {e1 e2 : expr} {n : nat}
         (pf1 : closed_above e1 n) (pf2 : closed_above e2 (S n)) : closed_above (letAt p e1 e2) n
-    | pair_ca (e1 e2 : Expr) (n : nat) (pf1 : closed_above e1 n) (pf2 : closed_above e2 n)
+    | pair_ca {e1 e2 : expr} {n : nat} (pf1 : closed_above e1 n) (pf2 : closed_above e2 n)
       : closed_above (pair e1 e2) n
-    | pi1_ca (e : Expr) (n : nat) (pf : closed_above e n) : closed_above (pi1 e) n
-    | pi2_ca (e : Expr) (n : nat) (pf : closed_above e n) : closed_above (pi2 e) n
-    | inl_ca (e : Expr) (n : nat) (pf : closed_above e n) : closed_above (inl e) n
-    | inr_ca (e : Expr) (n : nat) (pf : closed_above e n) : closed_above (inr e) n
-    | caseE_ca (e1 e2 e3 : Expr) (n : nat) (pf1 : closed_above e1 n)
-        (pf2 : closed_above e2 (S n)) (pf3 : closed_above e3 (S n))
+    | pi1_ca {e : expr} {n : nat} (pf : closed_above e n) : closed_above (pi1 e) n
+    | pi2_ca {e : expr} {n : nat} (pf : closed_above e n) : closed_above (pi2 e) n
+    | inl_ca {e : expr} {n : nat} (pf : closed_above e n) : closed_above (inl e) n
+    | inr_ca {e : expr} {n : nat} (pf : closed_above e n) : closed_above (inr e) n
+    | caseE_ca {e1 e2 e3 : expr} {n : nat}
+        (pf1 : closed_above e1 n)
+        (pf2 : closed_above e2 (S n))
+        (pf3 : closed_above e3 (S n))
       : closed_above (caseE e1 e2 e3) n
-    | efql_ca (e : Expr) (n : nat) (pf : closed_above e n) : closed_above (efql e) n
-    | lam_ca (t : Typ) (e : Expr) (n : nat) (pf : closed_above e (S n)) : closed_above (lam t e) n
-    | app_ca (e1 e2 : Expr) (n : nat) (pf1 : closed_above e1 n) (pf2 : closed_above e2 n)
-      : closed_above (app e1 e2) n
-    | send_ca (e : Expr) (X : list nat) (p : PName) (n : nat) (pf : closed_above e n)
-      : closed_above (send e X p) n
-    | up_ca (e : Expr) (X : list nat) (n : nat) (pf : closed_above e n) : closed_above (up e X) n
-    | down_ca (e : Expr) (X : list nat) (n : nat) (pf : closed_above e n) : closed_above (down e X) n.
+    | efql_ca {e : expr} {n : nat} (pf : closed_above e n) : closed_above (efql e) n
+    | lam_ca (t : type) {e : expr} {n : nat} (pf : closed_above e (S n)) : closed_above (lam t e) n
+    | app_ca {e1 e2 : expr} {n : nat} (pf1 : closed_above e1 n) (pf2 : closed_above e2 n)
+      : closed_above (appE e1 e2) n
+    | send_ca {e : expr} (Δ : FiniteCtxt) (p q : PName) {n : nat} (pf : closed_above e n)
+      : closed_above (send e p Δ q) n
+    | up_ca {e : expr} (p : PName) (Δ : FiniteCtxt) {n : nat} (pf : closed_above e n)
+      : closed_above (up e p Δ) n
+    | down_ca {e : expr} (p : PName) (Δ : FiniteCtxt) {n : nat} (pf : closed_above e n)
+      : closed_above (down e p Δ) n.
 
-
-    Fixpoint closed_aboveb (e : Expr) (n : nat) : bool :=
+    Fixpoint closed_aboveb (e : expr) (n : nat) : bool :=
       match e with
       | var x => PeanoNat.Nat.ltb x n
       | uu => true
@@ -421,10 +675,10 @@ Section CorpsSyntax.
       | caseE e1 e2 e3 => closed_aboveb e1 n && closed_aboveb e2 (S n) && closed_aboveb e3 (S n)
       | efql e => closed_aboveb e n
       | lam t e => closed_aboveb e (S n)
-      | app e1 e2 => closed_aboveb e1 n && closed_aboveb e2 n
-      | send e X p => closed_aboveb e n
-      | up e X => closed_aboveb e n
-      | down e X => closed_aboveb e n
+      | appE e1 e2 => closed_aboveb e1 n && closed_aboveb e2 n
+      | send e p Δ q => closed_aboveb e n
+      | up e p Δ => closed_aboveb e n
+      | down e p Δ => closed_aboveb e n
       end.
 
     Lemma closed_aboveb_spec1 : forall e n, closed_aboveb e n = true -> closed_above e n.
@@ -465,7 +719,7 @@ Section CorpsSyntax.
           | [ IH : forall m, S ?n < m -> closed_above ?e m, H : ?n < ?k |- _ ] =>
               lazymatch goal with
               | [_ : S n < S k |- _ ] => fail
-              | _ => pose proof (Arith_prebase.lt_n_S_stt n k H)
+              | _ => assert (S n < S k) by lia
               end
           end;
         try (econstructor; eauto; fail).
@@ -479,7 +733,7 @@ Section CorpsSyntax.
       apply closed_above_mono with (n := n); assumption.
     Qed.
 
-    Definition closed (e : Expr) : Prop := closed_above e 0.
+    Definition closed (e : expr) : Prop := closed_above e 0.
 
     Theorem closed_closed_above : forall e, closed e -> forall n, closed_above e n.
     Proof using.
@@ -547,7 +801,7 @@ Section CorpsSyntax.
     Proof using.
       intros ξ n k clsd_abv m m_lt_Sn; destruct m; cbn.
       apply PeanoNat.Nat.lt_0_succ.
-      apply Arith_prebase.lt_n_S_stt; apply clsd_abv; apply Arith_prebase.lt_S_n_stt; assumption.
+      assert (ξ m < k) by (apply clsd_abv; lia); lia.
     Qed.
 
     Lemma ren_closed_above : forall e ξ n k,
@@ -573,8 +827,7 @@ Section CorpsSyntax.
       intros σ n k clsd_abv m m_lt_Sn; destruct m; cbn.
       * constructor; apply PeanoNat.Nat.lt_0_succ.
       * apply ren_closed_above with (n := k). apply clsd_abv.
-        apply Arith_prebase.lt_S_n_stt; assumption.
-        intros m' m'_lt_k; apply Arith_prebase.lt_n_S_stt; assumption.
+        all: intros; lia.
     Qed.
 
     Lemma subst_closed_above : forall e σ n k,
@@ -595,7 +848,7 @@ Section CorpsSyntax.
     Qed.
 
     (* This is essentially a nameless version of the traditional free-variables function. *)
-    Fixpoint min_closure (e : Expr) : nat :=
+    Fixpoint min_closure (e : expr) : nat :=
       match e with
       | var x => S x
       | uu => 0
@@ -609,10 +862,10 @@ Section CorpsSyntax.
       | caseE e1 e2 e3 => max (min_closure e1) (max (pred (min_closure e2)) (pred (min_closure e3)))
       | efql e => min_closure e
       | lam t e => pred (min_closure e)
-      | app e1 e2 => max (min_closure e1) (min_closure e2)
-      | send e X p => min_closure e
-      | up e X => min_closure e
-      | down e X => min_closure e
+      | appE e1 e2 => max (min_closure e1) (min_closure e2)
+      | send e p Δ q => min_closure e
+      | up e p Δ => min_closure e
+      | down e p Δ => min_closure e
       end.
 
     Theorem closed_above_min : forall e, closed_above e (min_closure e).
@@ -629,3 +882,8 @@ Section CorpsSyntax.
   End Closure.
 End CorpsSyntax.
 
+Arguments type : clear implicits.
+Arguments expr : clear implicits.
+Arguments mod : clear implicits.
+
+    
