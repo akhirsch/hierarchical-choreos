@@ -44,6 +44,29 @@ Section BoolEqB.
     }.
 End BoolEqB.
 
+Section PairEqB.
+  Context {A B : Type} `{EqBool A} `{EqBool B}.
+
+  Definition pair_eqb (p1 p2 : A * B) : bool :=
+    match p1, p2 with
+    | (a1, b1), (a2, b2) => eqb a1 a2 && eqb b1 b2
+    end.
+  
+  #[global] Program Instance PairEqB : EqBool (A * B) :=
+    {
+      eqb := pair_eqb;
+    }.
+  Next Obligation.
+    cbn in H1. apply andb_prop in H1; destruct H1.
+    apply eqb_liebniz in H1; apply eqb_liebniz in H2.
+    subst; reflexivity.
+  Defined.
+  Next Obligation.
+    cbn; repeat rewrite eqb_refl; reflexivity.
+  Defined.
+  
+End PairEqB.
+
 Section ListEqB.
   Context {A : Type} `{EqBA : EqBool A}.
 
@@ -119,7 +142,7 @@ Section EqBoolLemmas.
     intros x y;  destruct (eqb x y) eqn:H.
     apply eqb_liebniz in H; left; auto.
     apply eqb_liebniz_false in H; right; auto.
-  Qed.
+  Defined.
 
   Lemma eqb_sym : forall (x y : A), eqb x y = eqb y x.
   Proof using A EqBA.
