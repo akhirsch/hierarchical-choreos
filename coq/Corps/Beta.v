@@ -1,11 +1,15 @@
 Require Import Syntax.
 Require Import EqBool.
+Require Import Types.
 
 Section BetaReduction.
 
   Context {PName : Type} `{EqBool PName}.
   #[local] Notation type := (type PName).
   #[local] Notation expr := (expr PName).
+  #[local] Notation mod := (mod PName).
+  Context {CanSend CanUp CanDown : mod -> mod -> Prop}.
+  #[local] Notation Typed := (@Typed PName CanSend CanUp CanDown).
 
   (* substitute v for the variable 0 in e *)
   Definition singlesubst (e v : expr) :=
@@ -36,13 +40,29 @@ Section BetaReduction.
   | stepCaseInl (e1 e2 e3 : expr) : stepβ (caseE (inl e1) e2 e3) (singlesubst e3 e1)
   (* Do I really want stepEfqlInner? *)
   | stepEfqlInner {e1 e2 : expr} (step : stepβ e1 e2) : stepβ (efql e1) (efql e2)
-  | stepEfql (e1 e2 : expr) : stepβ (efql e1) e2 (* Should e2 have to be in normal form? *)
+  (* | stepEfql (e1 e2 : expr) : stepβ (efql e1) e2 (* Should e2 have to be in normal form? *) *)
   | stepLam (t : type) {e1 e2 : expr} (step : stepβ e1 e2) : stepβ (lam t e1) (lam t e2)
   | stepApp1 {e11 e12 : expr} (step : stepβ e11 e12) (e2 : expr)
     : stepβ (appE e11 e2) (appE e12 e2)
   | stepApp2 (e1 : expr) {e21 e22 : expr} (step : stepβ e21 e22)
     : stepβ (appE e1 e21) (appE e1 e22)
   | stepAppLam (t : type) (e1 e2 : expr) : stepβ (appE (lam t e1) e2) (singlesubst e1 e2).
+
+  
+  Theorem preservation : forall e1 e2 Γ τ, Typed Γ e1 τ -> stepβ e1 e2 -> Typed Γ e2 τ.
+  Proof using.
+    intros e1 e2 Γ τ typ; revert e2; induction typ; intros e2' stp; inversion stp; subst;
+      repeat match goal with
+           | [ IH : forall e2, stepβ ?e e2 -> Typed ?G e2 ?τ, H : stepβ ?e ?e' |- _ ] =>
+               lazymatch goal with
+               | [_ : Typed G e' τ |- _ ] => fail
+               | _ => pose proof (IH e' H)
+               end
+           end;
+      try (econstructor; eauto; fail); try (inversion typ; subst; assumption).
+    - admit.
+    - admit.
+  Admitted.
 
 
 End BetaReduction.

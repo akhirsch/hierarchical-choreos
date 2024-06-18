@@ -3,6 +3,9 @@ Require Import Coq.Lists.List.
 Require Import Lia.
 Require Import Coq.Classes.RelationClasses.
 Import ListNotations.
+Require Import Coq.Logic.JMeq.
+Require Import Coq.Logic.Eqdep_dec.
+Require Import Coq.Program.Equality.
 
 
 Set Implicit Arguments.
@@ -167,6 +170,12 @@ Section CorpsSyntax.
       intros m1 m2 pfx; induction pfx; cbn; lia.
     Qed.
 
+    Lemma mod_app_mono_l : forall m1 m2 m3, PrefixOf m1 m2 -> PrefixOf (mod_app m3 m1) (mod_app m3 m2).
+    Proof using.
+      intros m1 m2 m3 pfx; revert m3; induction pfx; intro m3; [reflexivity|].
+      cbn; apply PO_step; apply IHpfx.
+    Qed.
+
     Fixpoint prefixb (m1 m2 : mod) : bool :=
       if eqb m1 m2
       then true
@@ -213,6 +222,172 @@ Section CorpsSyntax.
       | cons m p => PO_step (base_Prefix m) p
       end.
 
+    Fixpoint remove_Prefix (m1 m2 : mod) : option mod :=
+      if eqb m1 m2
+      then Some base
+      else match m2 with
+           | base => None
+           | cons m2' p =>
+               match remove_Prefix m1 m2' with
+               | None => None
+               | Some m => Some (cons m p)
+               end
+           end.
+
+    Lemma readd_remove_prefix : forall m1 m2 m3, remove_Prefix m1 m2 = Some m3 -> mod_app m1 m3 = m2.
+    Proof using.
+      intros m1 m2; revert m1; induction m2; intros m1 m3 eq; cbn in *;
+        eq_bool; subst; try (inversion eq; subst); cbn; try reflexivity.
+      destruct (remove_Prefix m1 m2) eqn:eq'; [|inversion eq].
+      inversion H1; subst; clear H1; cbn.
+      specialize (IHm2 m1 m eq'). rewrite IHm2. reflexivity.
+    Qed.
+
+    Lemma remove_all_mod : forall m, remove_Prefix m m = Some base.
+    Proof using.
+      intro m; destruct m; cbn; eq_bool; reflexivity.
+    Qed.
+
+    Lemma prefix_remove_Some : forall m1 m2, PrefixOf m1 m2 -> exists m, remove_Prefix m1 m2 = Some m.
+    Proof using.
+      intros m1 m2 pfx; induction pfx; cbn.
+      - exists base; apply remove_all_mod.
+      - eq_bool; subst; [exists base; reflexivity|].
+        destruct IHpfx as [m IHpfx].
+        exists (cons m p); rewrite IHpfx; reflexivity.
+    Qed.
+
+    Lemma remove_Some_prefix : forall m1 m2 m3, remove_Prefix m1 m2 = Some m3 -> PrefixOf m1 m2.
+    Proof using.
+      intros m1 m2; revert m1; induction m2; intros m1 m3 eq; cbn in eq;
+        eq_bool; subst; try (econstructor; eauto; fail).
+      inversion eq.
+      destruct (remove_Prefix m1 m2) eqn:eq'; inversion eq; subst.
+      specialize (IHm2 m1 m eq').
+      constructor; auto.
+    Qed.
+
+    Definition mod_eq_dec  : forall (m1 m2 : mod), {m1 = m2} + {m1 <> m2}.
+      refine (fix mod_eq_dec (m1 m2 : mod) :=
+      match m1, m2 with
+      | base, base => left eq_refl
+      | base, cons m2' p => right (fun eq => _)
+      | cons m1' p, base => right (fun eq => _)
+      | cons m1' p, cons m2' q =>
+          match EqBool.eq_dec p q with
+          | left eq_p_q =>
+              match mod_eq_dec m1' m2' with
+              | left eq_12 => left _
+              | right neq_12 => right (fun eq => _)
+              end
+          | right neq_p_q => right (fun eq => _)
+      end
+      end).
+      all: try (inversion eq; fail).
+      - rewrite eq_p_q; rewrite eq_12; reflexivity.
+      - inversion eq; subst; apply neq_12; reflexivity.
+      - inversion eq; subst; apply neq_p_q; reflexivity.
+    Defined.
+
+    Inductive PrefixOfT : mod -> mod -> Type :=
+    | POT_refl (m : mod) : PrefixOfT m m
+    | POT_step (m1 m2 : mod) (p : PName) (pfx : PrefixOfT m1 m2) : PrefixOfT m1 (cons m2 p).
+
+    Fixpoint PrefixOfT2Prefix {m1 m2 : mod} (pfx : PrefixOfT m1 m2) : PrefixOf m1 m2 :=
+      match pfx with
+      | POT_refl m => PO_refl m
+      | POT_step p pfx => PO_step (PrefixOfT2Prefix pfx) p
+      end.
+
+    Fixpoint base_PrefixT (m : mod) : PrefixOfT base m :=
+      match m with
+      | base => POT_refl base
+      | cons m p => POT_step p (base_PrefixT m)
+      end.
+
+    Fixpoint PrefixOfT_dec (m1 m2 : mod) : option (PrefixOfT m1 m2) :=
+      match mod_eq_dec m1 m2 with
+      | left e => ltac:(rewrite e; exact (Some (POT_refl m2)))
+      | right neq =>
+          match m2 with
+            | base =>
+                match m1 with
+                | base => Some (POT_refl base)
+                | _ => None
+                end
+            | cons m2' q =>
+                match PrefixOfT_dec m1 m2' with
+                | Some pfxt => Some (POT_step q pfxt)
+                | None => None
+                end
+          end
+      end.
+
+    Lemma Prefix2PrefixT : forall m1 m2, PrefixOf m1 m2 -> exists pfxt, PrefixOfT_dec m1 m2 = Some pfxt.
+    Proof using.
+      intros m1 m2 pfx; induction pfx; cbn.
+      - destruct m; cbn.
+        -- exists (POT_refl base); reflexivity.
+        -- destruct (EqBool.eq_dec p p) as [e|n]; [|destruct (n eq_refl)].
+           destruct (mod_eq_dec m m) as [e'|n]; [|destruct (n eq_refl)].
+           exists (POT_refl (cons m p)).
+           assert (e = eq_refl) by (apply (UIP_dec EqBool.eq_dec)).
+           assert (e' = eq_refl) by (apply (UIP_dec EqBool.eq_dec)).
+           rewrite H1; cbn. rewrite H0; cbn. reflexivity.
+      - destruct (mod_eq_dec m1 (cons m2 p)); subst; cbn.
+        -- exists (POT_refl (cons m2 p)); reflexivity.
+        -- destruct IHpfx as [pfxt IHpfx]. rewrite IHpfx.
+           eexists; reflexivity.
+    Qed.
+
+    Theorem PrefixT_equiv : forall m1 m2, PrefixOf m1 m2 <-> exists pfxt, PrefixOfT_dec m1 m2 = Some pfxt.
+    Proof using.
+      intros m1 m2; split; intro H0. exact (Prefix2PrefixT H0).
+      destruct H0 as [pfxt H0]. apply PrefixOfT2Prefix; exact pfxt.
+    Qed.
+
+    Fixpoint remove_PrefixT (m1 m2 : mod) (pfx : PrefixOfT m1 m2) :=
+      match pfx with
+      | POT_refl m => base
+      | POT_step p pfx' => cons (remove_PrefixT pfx') p
+      end.
+
+    
+    Definition remove_Prefix' : forall (m1 m2 : mod) (pfx : PrefixOf m1 m2), mod.
+      refine (fix remove_Prefix' m1 m2 pfx :=
+      match mod_eq_dec m1 m2 with
+      | left _ => base
+      | right neq =>
+          (match m2 as a return a = m2 -> mod with
+          | base => fun eq => False_rect mod _
+          | cons m2' p =>
+              fun eq => cons (@remove_Prefix' m1 m2' _) p
+          end) eq_refl
+      end).
+      - rewrite <- eq in pfx. inversion pfx; subst. destruct (neq eq_refl).
+      - subst; inversion pfx; subst; [exfalso; apply neq; reflexivity | exact pf].
+    Defined.
+    
+    (* Lemma remove_prefix_prime : forall (m1 m2 : mod) (pfx : PrefixOf m1 m2), *)
+    (*     remove_Prefix m1 m2 = Some (remove_Prefix' pfx). *)
+    (* Proof using. *)
+    (*   intros m1 m2; revert m1; induction m2; intros m1; intro pfx; cbn; eq_bool; subst; *)
+    (*     try (reflexivity). *)
+    (*   - inversion pfx; subst. exfalso; apply neq; reflexivity. *)
+    (*   - destruct (mod_eq_dec (cons m2 p) (cons m2 p)) as [e' | n]; [|destruct (n eq_refl)]. *)
+    (*     reflexivity. *)
+    (*   - destruct (mod_eq_dec m1 (cons m2 p)) as [e' | n]; [destruct (neq e')|]. *)
+    (*     inversion pfx; subst. destruct (n eq_refl). *)
+
+    (* Equations remove_Prefix' (m1 m2 : mod) (pfx : PrefixOf m1 m2) : mod := *)
+    (*   { *)
+    (*     remove_Prefix' m1 m2 pfx with dec_eq m1 m2 => { *)
+    (*       remove_Prefix' m1 m2 pfx (left _) := base; *)
+    (*       remove_Prefix' base base (PO_refl _) (right neq) with (neq eq_refl) => { }; *)
+    (*       remove_Prefix' m1 (cons m2 p) (PO_step pf' p) (right neq) := cons (remove_Prefix' m1 m2 pf')     *)
+    (*     } *)
+    (*   }. *)
+      
   End Modality.
 
 
@@ -236,6 +411,81 @@ Section CorpsSyntax.
         locks_bound := fun n => PrefixOf_app m (locks_bound Γ n); 
       |}.
 
+    Program Definition prefixT_prefix_trans {m1 m2 m3 : mod} (pfx : PrefixOfT m1 m2) (pfx' : PrefixOf m2 m3) : PrefixOfT m1 m3 :=
+      match PrefixOfT_dec m1 m3 with
+      | Some pfxt => pfxt
+      | None => False_rect _ _
+      end.
+    Next Obligation.
+      apply PrefixOfT2Prefix in pfx.
+      pose proof (PrefixOf_trans pfx pfx') as pfx''.
+      apply Prefix2PrefixT in pfx''; destruct pfx'' as [pfx'' Hpfx''].
+      rewrite Hpfx'' in Heq_anonymous. inversion Heq_anonymous.
+    Qed.
+
+    Inductive ConsTowerOn : mod -> mod -> Type :=
+    | OneCons (p : PName) (m : mod) : ConsTowerOn (cons m p) m
+    | MoreCons (p : PName) (m1 m2 : mod) (cto : ConsTowerOn m1 m2) : ConsTowerOn (cons m1 p) m2.
+
+    Definition ConsTower_reduce : forall m1 m2 p, ConsTowerOn m1 (cons m2 p) -> ConsTowerOn m1 m2.
+      intros m1 m2 p cto; dependent induction cto.
+      apply MoreCons; apply OneCons.
+      apply MoreCons. apply IHcto; auto.
+    Defined.
+    
+    Definition ConsTowerOn_antirefl : forall m, ConsTowerOn m m -> False.
+      intro m; induction m; intro cto.
+      inversion cto.
+      inversion cto; subst.
+      - clear cto IHm; induction m; inversion H0; subst; apply IHm; auto.
+      - apply ConsTower_reduce in cto0. apply IHm; auto.
+    Defined.
+    
+    Definition ConsTowerOnPrefixT : forall m1 m2, ConsTowerOn m1 m2 -> PrefixOfT m1 m2 -> False.
+      intros m1 m2 cot pfxt; induction pfxt.
+      - apply ConsTowerOn_antirefl with (m := m); exact cot.
+      - apply IHpfxt. apply ConsTower_reduce with (p := p). exact cot.
+    Defined.
+
+    
+    Lemma UIprefixT : forall m1 m2 (pfx1 pfx2 : PrefixOfT m1 m2), pfx1 = pfx2.
+    Proof using H PName.
+      intros m1 m2 pfx1 pfx2; revert pfx1; induction pfx2; intro pfx1.
+      - destruct m.
+        -- dependent destruction pfx1; reflexivity.
+        -- dependent destruction pfx1. reflexivity.
+           exfalso; apply ConsTowerOnPrefixT with (m1 := cons m p) (m2 := m);
+             [constructor | assumption].
+      - dependent destruction pfx1.
+        -- exfalso; clear IHpfx2; apply ConsTowerOnPrefixT in pfx2; auto; constructor.
+        -- rewrite (IHpfx2 pfx1); reflexivity.
+    Qed.
+    
+    Lemma remove_prefix_mono : forall (m1 m2 m3 : mod) (pfx1 : PrefixOfT m3 m1) (pfx2 : PrefixOfT m3 m2),
+        PrefixOf m1 m2 -> PrefixOf (remove_PrefixT pfx1) (remove_PrefixT pfx2).
+    Proof using.
+      intros m1 m2 m3 pfx1 pfx2  pfx; revert m3 pfx1 pfx2; induction pfx; intros m3 pfx1 pfx2.
+      - inversion pfx1; subst; rewrite (UIprefixT pfx1 pfx2); reflexivity.
+      - admit.
+    Admitted.
+      
+
+    Definition remove_lock (Γ : Ctxt) (m : mod) : option Ctxt.
+      refine (match PrefixOfT_dec m (locks Γ 0) with
+      | None => None
+      | Some pfx =>
+          Some ({|
+                vars n :=  vars Γ n;
+                locks n := @remove_PrefixT m (locks Γ n) (prefixT_prefix_trans pfx (@locks_mono Γ 0 n ltac:(lia)));
+                all_locks := @remove_PrefixT m (all_locks Γ) (prefixT_prefix_trans pfx (@locks_bound Γ 0));
+                locks_mono := _;
+                locks_bound := _;
+              |})
+              end).
+      - intros n m0 H0; apply remove_prefix_mono; apply (locks_mono Γ H0).
+      - intros n; apply remove_prefix_mono; apply (locks_bound Γ).
+    Defined.
+
     Program Definition add_var (Γ : Ctxt) (m : mod) (τ : type) : Ctxt :=
       {|
         vars n :=
@@ -258,6 +508,41 @@ Section CorpsSyntax.
     Next Obligation.
       destruct n; [apply base_Prefix | apply locks_bound].
     Qed.
+
+    Definition ctxt_equiv (Γ Δ : Ctxt) : Prop :=
+      (forall x, vars Γ x = vars Δ x)
+      /\ (forall x, locks Γ x = locks Δ x)
+      /\ all_locks Γ = all_locks Δ.
+
+    Lemma ctxt_equiv_refl (Γ : Ctxt) : ctxt_equiv Γ Γ.
+    Proof using.
+      split; [|split]; intros; reflexivity.
+    Qed.
+
+    #[global] Instance CtxtEquivRefl : Reflexive ctxt_equiv := ctxt_equiv_refl.
+
+    Lemma ctxt_equiv_symm : forall Γ Δ : Ctxt, ctxt_equiv Γ Δ -> ctxt_equiv Δ Γ.
+    Proof using.
+      intros Γ Δ [vars_eqv [locks_eqv all_locks_eqv]];
+        split; [| split]; intros; symmetry; auto.
+    Qed.
+
+    #[global] Instance CtxtEquivSym : Symmetric ctxt_equiv := ctxt_equiv_symm.
+
+    Lemma ctxt_equiv_trans : forall Γ Δ E : Ctxt, ctxt_equiv Γ Δ -> ctxt_equiv Δ E -> ctxt_equiv Γ E.
+    Proof using.
+      intros Γ Δ E [vars_eqv1 [locks_eqv1 all_locks_eqv1]] [vars_eqv2 [locks_eqv2 all_locks_eqv2]];
+        split; [|split]; intros; etransitivity; eauto.
+    Qed.
+
+    #[global] Instance CtxtEquivTrans : Transitive ctxt_equiv := ctxt_equiv_trans.
+
+    #[global] Instance CtxtEquivEquiv : Equivalence ctxt_equiv :=
+      {|
+        Equivalence_Reflexive := CtxtEquivRefl;
+        Equivalence_Symmetric := CtxtEquivSym;
+        Equivalence_Transitive := CtxtEquivTrans;
+      |}.
 
     Inductive FiniteCtxt : Type :=
     | emptyFC : FiniteCtxt
