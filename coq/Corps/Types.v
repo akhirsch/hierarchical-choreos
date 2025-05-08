@@ -61,14 +61,16 @@ Section CorpsTypes.
         (cs : CanSend (cons (all_locks Γ) p) (cons (all_locks Γ) q))
         (eqv : ctxt_equiv Γ' (addFiniteCtxt (add_lock Γ q) Δ))
       : Typed Γ' (send e p Δ q) τ
-    | UpTyping {Γ : Ctxt} {p : PName} {Δ : FiniteCtxt} {e : expr} {τ : type}
+    | UpTyping {Γ Γ' : Ctxt} {p : PName} {Δ : FiniteCtxt} {e : expr} {τ : type}
         (pf : Typed (addFiniteCtxt Γ Δ) e τ)
         (cu : CanUp (all_locks Γ) (cons (all_locks Γ) p))
-      : Typed (addFiniteCtxt (add_lock Γ p) Δ) (up e p Δ) τ
-    | DownTyping {Γ : Ctxt} {p : PName} {Δ : FiniteCtxt} {e : expr} {τ : type}
+        (eqv : ctxt_equiv Γ' (addFiniteCtxt (add_lock Γ p) Δ))
+      : Typed Γ' (up e p Δ) τ
+    | DownTyping {Γ Γ' : Ctxt} {p : PName} {Δ : FiniteCtxt} {e : expr} {τ : type}
         (pf : Typed (addFiniteCtxt (add_lock Γ p) Δ) e τ)
         (cu : CanDown (cons (all_locks Γ) p) (all_locks Γ))
-      : Typed (addFiniteCtxt Γ Δ) (down e p Δ) τ
+        (eqv : ctxt_equiv Γ' (addFiniteCtxt Γ Δ))
+      : Typed Γ' (down e p Δ) τ
     .
 
     Theorem add_lock_ext : forall (Γ Δ : Ctxt) m, ctxt_equiv Γ Δ -> ctxt_equiv (add_lock Γ m) (add_lock Δ m).
@@ -131,9 +133,11 @@ Section CorpsTypes.
         try (econstructor; eauto; fail).
       - apply @SendTyping with (Γ := Γ); auto.
         transitivity Γ'; auto. symmetry; assumption.
-      - admit.
-      - admit.
-    Admitted.
+      - apply @UpTyping with (Γ := Γ); auto.
+        transitivity Γ'; auto. symmetry; assumption.
+      - apply @DownTyping with (Γ := Γ); auto.
+        transitivity Γ'; auto. symmetry; assumption.
+    Qed.
 
     Definition ctxt_ren (Γ : Ctxt) (ξ : renaming) (mono : forall n m, n <= m -> PrefixOf (locks Γ (ξ n)) (locks Γ (ξ m))): Ctxt :=
       {|
@@ -149,7 +153,12 @@ Section CorpsTypes.
         Typed Δ e τ -> Typed Γ (ren e ξ) τ.
     Proof using.
       intros Γ Δ e ξ τ mono eqv typ; revert Γ ξ mono eqv; induction typ;
-        intros Γ'' ξ mono [vars_eqv [locks_eqv al_eqv]]; cbn.
+        intros Γ'' ξ mono ctxt_eqv; cbn.
+      all: assert (forall g τ n m, n <= m -> PrefixOf (locks (add_var Γ'' g τ) (renup ξ n)) (locks (add_var Γ'' g τ) (renup ξ m))) as mono_add_var by
+      (intros g τ0 n0 m0 H0;
+      cbn; destruct n0; destruct m0; cbn; [constructor | apply base_Prefix | inversion H0 |];
+      apply mono; apply le_S_n; auto).
+      all: pose proof ctxt_eqv as [vars_eqv [locks_eqv al_eqv]].
       all: try (econstructor; eauto; fail).
       - apply VarTyping with (m := m).  rewrite <- pf1; rewrite <- vars_eqv; cbn; reflexivity.
         rewrite <- pf2; rewrite <- locks_eqv; cbn; reflexivity.
@@ -158,7 +167,25 @@ Section CorpsTypes.
         split; [|split].
         -- intro x; cbn. rewrite <- vars_eqv. cbn. reflexivity.
         -- intro x; cbn. rewrite <- locks_eqv. cbn. reflexivity.
-        --
+        -- unfold ctxt_ren; cbn. f_equal.
+           rewrite <- al_eqv. unfold ctxt_ren; cbn; reflexivity.
+      - econstructor; eauto.
+        apply IHtyp2 with (mono := mono_add_var p τ).
+        split; [|split]; auto.
+        all: intro x; destruct x; cbn; auto.
+        -- rewrite <- vars_eqv; unfold ctxt_ren; cbn; auto.
+        -- rewrite <- locks_eqv; unfold ctxt_ren; cbn; auto.
+      - eapply CaseTyping;
+          [
+            eapply IHtyp1; eauto
+          | apply IHtyp2 with (mono := mono_add_var base τ1)
+          | eapply IHtyp3 with (mono := mono_add_var base τ2)
+          ].
+        all: split; [|split]; auto; intro x; destruct x; cbn; auto.
+        1, 3: apply vars_eqv; auto.
+        all: apply locks_eqv; auto.
+      - eapply LamTyping.
+          
       Admitted.
 
 
@@ -167,24 +194,28 @@ Section CorpsTypes.
   Section Substitution.
 
     Definition TypedSubst (Γ : Ctxt) (σ : substitution) (Δ : Ctxt) :=
-      forall x, match PrefixOfT_dec (locks Γ x) (fst (vars Γ x)) with
-           | Some pfxt => Typed (add_lock Δ (remove_PrefixT pfxt)) (σ x) (snd (vars Γ x))
-           | None => True
-           end.
+      (* forall x, match PrefixOfT_dec (locks Γ x) (fst (vars Γ x)) with *)
+      (*      | Some pfxt => Typed (add_lock Δ (remove_PrefixT pfxt)) (σ x) (snd (vars Γ x)) *)
+      (*      | None => True *)
+      (*      end. *)
+      forall x (pfxt : PrefixOfT (locks Γ x) (fst (vars Γ x))),
+        Typed (add_lock Δ (remove_PrefixT pfxt)) (σ x) (snd (vars Γ x)).
       
-    Lemma substup_typed : forall Γ Δ σ τ,
-        TypedSubst Γ σ Δ -> TypedSubst (add_var Γ base τ) (substup σ) (add_var Δ base τ).
+    Lemma substup_typed : forall Γ Δ σ g τ,
+        TypedSubst Γ σ Δ -> TypedSubst (add_var Γ g τ) (substup σ) (add_var Δ g τ).
     Proof using.
-      intros Γ Δ σ τ typd; unfold TypedSubst in *; intros x; destruct x; cbn.
-      - econstructor; eauto; reflexivity.
-      - specialize (typd x); destruct (PrefixOfT_dec (locks Γ x) (fst (vars Γ x))); [|exact I].
-        eapply weakening with (Δ := add_lock Δ (remove_PrefixT p)); auto.
+      intros Γ Δ σ g τ typd; unfold TypedSubst in *; intros x pfxt.
+      destruct x; cbn in *.
+      - econstructor; eauto; cbn.
+        dependent induction pfxt; cbn; auto.
+        specialize (IHpfxt pfxt eq_refl ltac:(reflexivity)).
+        inversion IHpfxt; repeat f_equal; auto.
+      - eapply weakening with (Δ := add_lock Δ (remove_PrefixT pfxt)); [| apply typd].
+        split; [| split]; cbn; [intro y | intro y |]; reflexivity. 
         Unshelve.
-        -- split; [|split].
-           1,2: intro n.
-           all: cbn; reflexivity.
-        -- intros n m H0; apply locks_mono; lia.
+        intros n m n_le_m; cbn; apply PrefixOf_app; apply locks_mono; auto.
     Qed.
+        
     
     Theorem subst_typed : forall Γ Δ e σ τ, Typed Γ e τ -> TypedSubst Γ σ Δ -> Typed Δ (subst e σ) τ.
     Proof using.
@@ -203,10 +234,8 @@ Section CorpsTypes.
         apply IHtyped.
         unfold TypedSubst; unfold TypedSubst in typeds.
         intro x; specialize (typeds x); cbn.
-        destruct (PrefixOfT_dec (mod_app p (locks Γ x)) (fst (vars Γ x))) as [pfxt |];
-          [| exact I].
+        destruct (PrefixOfT_dec (mod_app p (locks Γ x)) (fst (vars Γ x))) as [pfxt |]; [| exact I].
         
-
                                              
 
   (* Section Decidability. *)

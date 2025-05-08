@@ -1,5 +1,5 @@
-Require Import Arith.
-Require Import Coq.Strings.String.
+From Stdlib Require Import Arith.
+From Stdlib Require Import Strings.String.
 
 Class EqBool (A : Type) :=
   {

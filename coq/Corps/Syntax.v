@@ -1,11 +1,11 @@
 Require Import Base.EqBool.
-Require Import Coq.Lists.List.
-Require Import Lia.
-Require Import Coq.Classes.RelationClasses.
+From Stdlib Require Import Lists.List.
+From Stdlib Require Import Lia.
+From Stdlib Require Import Classes.RelationClasses.
 Import ListNotations.
-Require Import Coq.Logic.JMeq.
-Require Import Coq.Logic.Eqdep_dec.
-Require Import Coq.Program.Equality.
+From Stdlib Require Import Logic.JMeq.
+From Stdlib Require Import Logic.Eqdep_dec.
+From Stdlib Require Import Program.Equality.
 
 
 Set Implicit Arguments.

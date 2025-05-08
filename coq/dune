@@ -1,3 +1,10 @@
-(include_subdirs qualified)
-(coq.theory
-  (name Corps))
+(env
+ (_ ; Applies to all profiles (dev, release, ...)
+  (coq
+   (flags
+    (:standard
+     -w -argument-scope-delimiter
+     -w -notation-incompatible-prefix
+     -w deprecated-from-Coq
+     -w deprecated-dirpath-Coq)))))
+		

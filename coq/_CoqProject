@@ -1,3 +1,5 @@
--R _build/default Corps
+-R Base Base
+-R Corps Corps
+
 Base/EqBool.v
 Corps/Syntax.v

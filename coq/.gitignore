@@ -1,2 +1,6 @@
 Corps/.lia.cache
 _build
+*.vo
+.Makefile.d
+.lia.cache
+.#*
