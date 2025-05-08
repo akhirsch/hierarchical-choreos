@@ -1,10 +1,9 @@
 #+LATEX_CLASS: article
 #+LATEX_HEADER: \usepackage{enumerate}
 #+OPTIONS: toc:nil
-#+OPTIONS: H: 0
+#+OPTIONS: H: 10
 #+OPTIONS: author:Andrew K. Hirsch
 #+TITLE: A Modal Propositions-As-Types Principle for Choreographic and Multitier Programming (Abstract)
-
 
 * Intro
 ** Doxastic Logic
