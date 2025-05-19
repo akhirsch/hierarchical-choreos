@@ -1,8 +1,8 @@
 Require Import EqBool.
 Require Import Syntax.
-Require Import RelationClasses.
-Require Import Lia.
-Require Import Coq.Program.Equality.
+From Stdlib Require Import RelationClasses.
+From Stdlib Require Import Lia.
+From Stdlib Require Import Program.Equality.
 
 Section CorpsTypes.
   Context {PName : Type} `{EqBool PName}.

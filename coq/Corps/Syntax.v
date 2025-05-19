@@ -6,6 +6,7 @@ Import ListNotations.
 From Stdlib Require Import Logic.JMeq.
 From Stdlib Require Import Logic.Eqdep_dec.
 From Stdlib Require Import Program.Equality.
+From Stdlib Require Import Program.Wf.
 
 
 Set Implicit Arguments.
@@ -53,6 +54,21 @@ Section CorpsSyntax.
     | base : mod
     | cons (m : mod) (p : PName) : mod.
 
+    Fixpoint mod2list (m : mod) : list PName :=
+      match m with
+      | base => []
+      | cons m p => (mod2list m) ++ [p]
+      end.
+
+    Lemma mod2list_inj : forall (m1 m2 : mod) , mod2list m1 = mod2list m2 -> m1 = m2.
+    Proof using.
+      intro m1; induction m1; intros m2 eq; destruct m2; cbn in eq; subst; auto.
+      - destruct (app_eq_nil _ _ ltac:(symmetry; exact eq)) as [H0 H1]; inversion H1.
+      - destruct (app_eq_nil _ _ eq) as [H0 H1]; inversion H1.
+      - apply app_inj_tail in eq; destruct eq; subst.
+        apply IHm1 in H0; subst; reflexivity.
+    Qed.        
+
     Fixpoint mod_eqb (m1 m2 : mod) : bool :=
       match m1, m2 with
       | base, base => true
@@ -76,6 +92,14 @@ Section CorpsSyntax.
       | cons m _ => S (mod_size m)
       end.
 
+    Lemma mod_size_list_length : forall m : mod, mod_size m = length (mod2list m).
+    Proof using.
+      intros m; induction m; cbn; auto.
+      rewrite length_app; cbn.
+      rewrite PeanoNat.Nat.add_1_r.
+      f_equal; exact IHm.
+    Qed.
+
     Lemma mod_size_zero_to_base : forall m, mod_size m = 0 -> m = base.
     Proof using.
       intro m; destruct m; cbn; intro eq; [reflexivity | inversion eq].
@@ -87,7 +111,15 @@ Section CorpsSyntax.
       | cons m2 p => cons (mod_app m1 m2) p
       end.
 
-    Lemma mod_app_comm : forall m1 m2 m3, mod_app (mod_app m1 m2) m3 = mod_app m1 (mod_app m2 m3).
+    Lemma mod_app2list : forall (m1 m2 : mod), mod2list (mod_app m1 m2) = (mod2list m1) ++ (mod2list m2).
+    Proof using.
+      intros m1 m2; revert m1; induction m2; intro m1; cbn.
+      - symmetry; apply app_nil_r.
+      - rewrite app_assoc; f_equal. apply IHm2.
+    Qed.
+
+
+    Lemma mod_app_assoc : forall m1 m2 m3, mod_app (mod_app m1 m2) m3 = mod_app m1 (mod_app m2 m3).
     Proof using.
       intros m1 m2 m3; revert m1 m2; induction m3 as [| m3' IHm3' p]; intros m1 m2; cbn.
       - reflexivity.
@@ -129,12 +161,70 @@ Section CorpsSyntax.
 
     #[global] Coercion proc_to_mod : PName >-> mod.
 
+    Lemma mod_app_first_inj : forall (p q : PName) (m1 m2 : mod),
+        mod_app p m1 = mod_app q m2 ->
+        p = q /\ m1 = m2.
+    Proof using.
+      intros p q m1; revert p q; induction m1; cbn; intros q r m2 eq.
+      destruct m2; inversion eq; subst; auto.
+      symmetry in H1; apply mod_app_base_inv in H1; destruct H1; subst; auto.
+      inversion H0.
+      destruct m2; inversion eq; subst; auto.
+      apply mod_app_base_inv in H1; destruct H1; subst; auto.
+      inversion H0.
+      apply IHm1 in H1; destruct H1; subst; auto.
+    Qed.
+
+    Fixpoint list2mod (l : list PName) : mod :=
+      match l with
+      | [] => base
+      | p :: l' => mod_app p (list2mod l')
+      end.
+
+    Lemma list2mod_inj : forall (l1 l2 : list PName), list2mod l1 = list2mod l2 -> l1 = l2.
+    Proof using.
+      intro l1; induction l1; intros l2 eq; cbn in *.
+      - destruct l2; cbn in eq; auto;
+          symmetry in eq; apply mod_app_base_inv in eq; destruct eq as [eq0 eq1]; inversion eq0.
+      - destruct l2; cbn in eq; auto.
+        -- apply mod_app_base_inv in eq; destruct eq as [eq0 eq1]; inversion eq0.
+        -- apply mod_app_first_inj in eq; destruct eq; subst; auto.
+           apply IHl1 in H1; subst; reflexivity.
+    Qed.
+
+    Lemma list2mod2list : forall (l : list PName),
+        mod2list (list2mod l) = l.
+    Proof using.
+      intro l; induction l; cbn; auto.
+      rewrite mod_app2list; cbn. f_equal; exact IHl.
+    Qed.
+
+    Lemma app2mod_app : forall (l1 l2 : list PName),
+        list2mod (l1 ++ l2) = mod_app (list2mod l1) (list2mod l2).
+    Proof using.
+      intro l1; induction l1; cbn; intro l2.
+      rewrite mod_base_app; reflexivity.
+      rewrite IHl1. symmetry; apply mod_app_assoc.
+    Qed.
+    
+    Lemma mod2list2mod : forall (m : mod),
+        list2mod (mod2list m) = m.
+    Proof using.
+      intro m; induction m; cbn; auto.
+      rewrite app2mod_app; cbn. f_equal; exact IHm.
+    Qed.
+    
     Inductive PrefixOf : mod -> mod -> Prop :=
     | PO_refl (m : mod) : PrefixOf m m
     | PO_step {m1 m2 : mod} (pf : PrefixOf m1 m2) (p : PName)
       : PrefixOf m1 (cons m2 p).
 
     #[global] Instance PrefixOfRefl : Reflexive PrefixOf := PO_refl.
+
+    Lemma PrefixOf_app : forall m1 m2, PrefixOf m1 (mod_app m1 m2).
+    Proof using.
+      intros m1 m2; revert m1; induction m2; intro m1; cbn; constructor; auto.
+    Qed.
 
     Lemma PrefixOf_peel : forall m1 m2, PrefixOf m1 m2 -> exists m2', m2 = mod_app m1 m2'.
     Proof using.
@@ -150,7 +240,7 @@ Section CorpsSyntax.
       apply PrefixOf_peel in pfx1; destruct pfx1 as [m1' eq1].
       apply PrefixOf_peel in pfx2; destruct pfx2 as [m2' eq2].
       subst.
-      rewrite mod_app_comm in eq2. apply mod_app_id_inv in eq2. apply mod_app_base_inv in eq2; destruct eq2; subst. cbn. reflexivity.
+      rewrite mod_app_assoc in eq2. apply mod_app_id_inv in eq2. apply mod_app_base_inv in eq2; destruct eq2; subst. cbn. reflexivity.
     Qed.
 
     #[global] Instance PrefixOfAntisym : Antisymmetric mod eq PrefixOf := PrefixOf_antisym.
@@ -209,7 +299,7 @@ Section CorpsSyntax.
       right; intro H'; apply PrefixOf_prefixb in H'; rewrite H' in eq; inversion eq.
     Defined.
 
-    Theorem PrefixOf_app : forall m1 {m2 m3}, PrefixOf m2 m3 -> PrefixOf (mod_app m1 m2) (mod_app m1 m3).
+    Theorem PrefixOf_app_mono : forall m1 {m2 m3}, PrefixOf m2 m3 -> PrefixOf (mod_app m1 m2) (mod_app m1 m3).
     Proof using.
       intros m1 m2 m3 pfx; revert m1; induction pfx as [m2 | m2 m3 pf IHpf p]; intro m1.
       - reflexivity.
@@ -352,6 +442,62 @@ Section CorpsSyntax.
       | POT_step p pfx' => cons (remove_PrefixT pfx') p
       end.
 
+    Lemma Snm_false :forall n m, ~ (S ( n + m) = n).
+    Proof using.
+      intro n; induction n; cbn; intros m eq; inversion eq; subst.
+      apply IHn in H1; auto.
+    Qed.
+
+    Lemma PrefixT_modapp_inv : forall m1 m2, PrefixOfT (mod_app m1 m2) m1 -> m2 = base.
+    Proof using.
+      intro m1; induction m1; intros m2 pfx.
+      - rewrite mod_base_app in pfx; inversion pfx; subst; reflexivity.
+      - inversion pfx; subst.
+        -- clear IHm1 pfx; induction m2; [reflexivity| cbn in *].
+           inversion H2; subst.
+           assert (mod_size (mod_app (cons m1 p) m2) = mod_size m1) as eq by (f_equal; exact H1).
+           rewrite mod_app_size in eq; cbn in eq.
+           apply Snm_false in eq; exfalso; auto.
+        -- assert (cons m1 p = mod_app m1 (cons base p)) as eq by reflexivity; rewrite eq in pfx0.
+           rewrite mod_app_assoc in pfx0. apply IHm1 in pfx0.
+           clear eq pfx IHm1 m1.
+           exfalso; induction m2; cbn in pfx0; inversion pfx0.
+    Qed.           
+      
+    Lemma PrefixT_cons_inv : forall m p, PrefixOfT (cons m p) m -> False.
+    Proof using.
+      intros m p.
+      assert (cons m p = mod_app m (cons base p)) as eq by reflexivity; rewrite eq; intro pfx.
+      apply PrefixT_modapp_inv in pfx.
+      inversion pfx.
+    Qed.
+
+    Lemma remove_PrefixT_ext : forall (m1 m2 : mod) (pfx1 pfx2 : PrefixOfT m1 m2),
+        remove_PrefixT pfx1 = remove_PrefixT pfx2.
+    Proof using.
+      intros m1 m2; revert m1; induction m2; intros m1 pfx1 pfx2.
+      - inversion pfx1; subst.
+        dependent destruction pfx1; dependent destruction pfx2; reflexivity.
+      - dependent destruction pfx1; dependent destruction pfx2; cbn; auto.
+        -- exfalso; apply PrefixT_cons_inv in pfx2; auto.
+        -- exfalso; apply PrefixT_cons_inv in pfx1; auto.
+        -- rewrite IHm2 with (pfx2 := pfx2); reflexivity.
+    Qed.
+
+    Program Fixpoint PrefixT_peel (m1 m2 : mod) : PrefixOfT m1 (mod_app m1 m2) :=
+      match m2 with
+      | base => POT_refl m1
+      | cons m2 p => POT_step p (PrefixT_peel m1 m2)
+      end.
+      
+    Lemma remove_PrefixT_app : forall (m1 m2 : mod) (pfx : PrefixOfT m1 (mod_app m1 m2)),
+        remove_PrefixT pfx = m2.
+    Proof using.
+      intros m1 m2 pfx.
+      rewrite remove_PrefixT_ext with (pfx2 := PrefixT_peel m1 m2); clear pfx.
+      revert m1; induction m2; intro m1; cbn; auto.
+      rewrite IHm2; reflexivity.
+    Qed.
     
     Definition remove_Prefix' : forall (m1 m2 : mod) (pfx : PrefixOf m1 m2), mod.
       refine (fix remove_Prefix' m1 m2 pfx :=
@@ -367,6 +513,40 @@ Section CorpsSyntax.
       - rewrite <- eq in pfx. inversion pfx; subst. destruct (neq eq_refl).
       - subst; inversion pfx; subst; [exfalso; apply neq; reflexivity | exact pf].
     Defined.
+
+    Fixpoint remove_list_prefix  {A : Type} `{eqdec : EqBool A} (l1 l2 : list A) : option (list A) :=
+      match l1, l2 with
+      | [], _ => Some l2
+      | (_ :: _), [] => None
+      | (x :: xs), (y :: ys) => if eqb x y then remove_list_prefix xs ys else None
+      end.
+
+    Lemma remove_list_prefix_nil : forall {A : Type} `{eqdec :EqBool A} (l : list A), remove_list_prefix l l = Some [].
+    Proof using.
+      intros A eqdec l; induction l; cbn. reflexivity.
+      eq_bool; auto.
+    Qed.
+
+    Lemma remove_list_prefix_front : forall {A : Type} `{eqbool : EqBool A} (l1 l2 l3 l4 : list A),
+        remove_list_prefix l1 l2 = Some l3 ->
+        remove_list_prefix l1 (l2 ++ l4) = Some (l3 ++ l4).
+    Proof using.
+      intros A eqbool l1; induction l1; intros l2 l3 l4 eq; cbn in *.
+      - inversion eq; subst; reflexivity.
+      - destruct l2; cbn in *. inversion eq.
+        eq_bool; subst.
+        -- apply IHl1; auto.
+        -- inversion eq.
+    Qed.
+
+    Lemma remove_list_PrefixOf : forall (m1 m2 : mod), PrefixOf m1 m2 -> exists l, remove_list_prefix (mod2list m1) (mod2list m2) = Some l.
+    Proof using.
+      intros m1 m2 pfx; induction pfx; cbn.
+      - exists []; apply remove_list_prefix_nil.
+      - destruct IHpfx as [l' eq].
+        exists (l' ++ [p]). apply remove_list_prefix_front. exact eq.
+    Qed.
+      
     
     (* Lemma remove_prefix_prime : forall (m1 m2 : mod) (pfx : PrefixOf m1 m2), *)
     (*     remove_Prefix m1 m2 = Some (remove_Prefix' pfx). *)
@@ -407,8 +587,8 @@ Section CorpsSyntax.
         vars n := vars Γ n;
         locks n := mod_app m (locks Γ n);
         all_locks := mod_app m (all_locks Γ);
-        locks_mono := fun j k leq => PrefixOf_app m (locks_mono Γ leq);
-        locks_bound := fun n => PrefixOf_app m (locks_bound Γ n); 
+        locks_mono := fun j k leq => PrefixOf_app_mono m (locks_mono Γ leq);
+        locks_bound := fun n => PrefixOf_app_mono m (locks_bound Γ n); 
       |}.
 
     Program Definition prefixT_prefix_trans {m1 m2 m3 : mod} (pfx : PrefixOfT m1 m2) (pfx' : PrefixOf m2 m3) : PrefixOfT m1 m3 :=
@@ -460,16 +640,43 @@ Section CorpsSyntax.
         -- exfalso; clear IHpfx2; apply ConsTowerOnPrefixT in pfx2; auto; constructor.
         -- rewrite (IHpfx2 pfx1); reflexivity.
     Qed.
+
+    Lemma remove_base_prefix : forall (m : mod) (pfx :PrefixOfT base m),
+        remove_PrefixT pfx = m.
+    Proof using.
+      intro m; induction m; intro pfx;
+        dependent destruction pfx; cbn; [| rewrite IHm]; auto.
+    Qed.
+
+    Lemma app_prefix_inj : forall {A :Type} (l1 l2 l3 : list A),
+        l1 ++ l2 = l1 ++ l3 -> l2 = l3.
+    Proof using.
+      intros A l1; induction l1; intros l2 l3; cbn; intro eq; auto.
+      inversion eq; subst. apply IHl1; auto.
+    Qed.
     
     Lemma remove_prefix_mono : forall (m1 m2 m3 : mod) (pfx1 : PrefixOfT m3 m1) (pfx2 : PrefixOfT m3 m2),
         PrefixOf m1 m2 -> PrefixOf (remove_PrefixT pfx1) (remove_PrefixT pfx2).
     Proof using.
-      intros m1 m2 m3 pfx1 pfx2  pfx; revert m3 pfx1 pfx2; induction pfx; intros m3 pfx1 pfx2.
-      - inversion pfx1; subst; rewrite (UIprefixT pfx1 pfx2); reflexivity.
-      - admit.
-    Admitted.
-      
-
+      intros m1 m2 m3 pfx1 pfx2 pfx12.
+      destruct  (PrefixOf_peel (PrefixOfT2Prefix  pfx1)) as [m4 eq1].
+      destruct (PrefixOf_peel (PrefixOfT2Prefix pfx2)) as [m5 eq2].
+      destruct (PrefixOf_peel pfx12) as [m6 eq3]; subst.
+      rewrite <- (mod2list2mod m3) in eq3;
+        rewrite <- (mod2list2mod m4) in eq3;
+        rewrite <- (mod2list2mod m5) in eq3;
+        rewrite <- (mod2list2mod m6) in eq3.
+      repeat rewrite <- app2mod_app in eq3.
+      apply list2mod_inj in eq3.
+      rewrite <- app_assoc in eq3.
+      apply app_prefix_inj in eq3.
+      assert (list2mod (mod2list m5) = list2mod (mod2list m4 ++ mod2list m6)) as eq4 by (f_equal; exact eq3).      
+      rewrite app2mod_app in eq4.
+      repeat rewrite mod2list2mod in eq4; subst.
+      repeat rewrite remove_PrefixT_app.
+      apply PrefixOf_app.
+    Qed.
+    
     Definition remove_lock (Γ : Ctxt) (m : mod) : option Ctxt.
       refine (match PrefixOfT_dec m (locks Γ 0) with
       | None => None
