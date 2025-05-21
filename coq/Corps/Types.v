@@ -275,35 +275,7 @@ Section CorpsTypes.
         apply typeds; exact eq.
     Qed.                                             
 
-  (* Section Decidability. *)
-
-  (*   Program Fixpoint typedb (Γ : Ctxt) (e : expr) (τ : type) : bool := *)
-  (*     match e with *)
-  (*     | var x => eqb (locks Γ x, τ) (vars Γ x) *)
-  (*     | uu => eqb τ UnitT *)
-  (*     | atE p e => *)
-  (*         match τ with *)
-  (*         | AtT q σ => *)
-  (*             eqb p q && typedb (add_lock Γ p) e σ *)
-  (*         | _ => false *)
-  (*         end *)
-  (*     | letAt p e1 e2 => _ *)
-  (*     | pair e1 e2 => _ *)
-  (*     | pi1 e => _ *)
-  (*     | pi2 e => _ *)
-  (*     | inl e => _ *)
-  (*     | inr e => _ *)
-  (*     | caseE e1 e2 e3 => _ *)
-  (*     | efql e => _ *)
-  (*     | lam t e => _ *)
-  (*     | appE e1 e2 => _ *)
-  (*     | send e p Δ q => _ *)
-  (*     | up e p Δ => _ *)
-  (*     | down e p Δ => _ *)
-  (*     end. *)
-  (*   Next Obligation. *)
-
-  (* End Decidability. *)
+  End Substitution.
   
 End CorpsTypes.
 
