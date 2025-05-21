@@ -3,3 +3,5 @@
 
 Base/EqBool.v
 Corps/Syntax.v
+Corps/Types.v
+Corps/Beta.v

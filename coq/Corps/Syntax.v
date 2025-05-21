@@ -213,6 +213,52 @@ Section CorpsSyntax.
       intro m; induction m; cbn; auto.
       rewrite app2mod_app; cbn. f_equal; exact IHm.
     Qed.
+
+    Inductive SuffixOf : mod -> mod -> Prop :=
+    | SO_base (m : mod) : SuffixOf base m
+    | SO_step {m1 m2 : mod} (sfx : SuffixOf m1 m2) (p : PName)
+      : SuffixOf (cons m1 p) (cons m2 p).
+
+    Fixpoint SO_refl (m : mod) : SuffixOf m m :=
+      match m with
+      | base => SO_base base
+      | cons m' p => SO_step (SO_refl m') p
+      end.
+
+    #[global] Instance SuffixOfRefl : Reflexive SuffixOf := SO_refl.
+
+    Lemma suffix_has_prefix : forall m1 m2, SuffixOf m1 m2 -> exists m3, mod_app m3 m1 = m2.
+    Proof using.
+      intros m1 m2 sfx; induction sfx; cbn.
+      - exists m; reflexivity.
+      - destruct IHsfx as [m3 eq]; exists m3; rewrite eq; reflexivity.
+    Qed.
+
+    Lemma suffix_of_prefixed : forall m1 m2, SuffixOf m2 (mod_app m1 m2).
+    Proof using.
+      intros m1 m2; revert m1; induction m2; intro m1; cbn.
+      - apply SO_base.
+      - apply SO_step. apply IHm2.
+    Qed.
+
+    Lemma has_prefix_is_suffix : forall m1 m2 m3, mod_app m3 m1 = m2 -> SuffixOf m1 m2.
+    Proof using.
+      intros m1; induction m1; cbn; intros m2 m3 eq; subst.
+      apply SO_base.
+      apply SO_step; apply suffix_of_prefixed.
+    Qed.
+
+    Theorem SuffixOf_iff : forall m1 m2, SuffixOf m1 m2 <-> exists m3, mod_app m3 m1 = m2.
+    Proof using.
+      intros m1 m2; split; [apply suffix_has_prefix | intros [m3 eq]].
+      apply has_prefix_is_suffix with (m3 := m3); auto.
+    Qed.
+
+    Lemma SuffixOf_modapp : forall m1 m2 m3, SuffixOf m1 m2 -> SuffixOf (mod_app m1 m3) (mod_app m2 m3).
+    Proof using.
+      intros m1 m2 m3; induction m3; cbn; intro sfx; auto.
+      apply SO_step; auto.
+    Qed.
     
     Inductive PrefixOf : mod -> mod -> Prop :=
     | PO_refl (m : mod) : PrefixOf m m
@@ -220,6 +266,11 @@ Section CorpsSyntax.
       : PrefixOf m1 (cons m2 p).
 
     #[global] Instance PrefixOfRefl : Reflexive PrefixOf := PO_refl.
+
+    Lemma PrefixOf_base : forall m, PrefixOf base m.
+    Proof using.
+      intro m; induction m; constructor; auto.
+    Qed.
 
     Lemma PrefixOf_app : forall m1 m2, PrefixOf m1 (mod_app m1 m2).
     Proof using.
@@ -359,20 +410,20 @@ Section CorpsSyntax.
 
     Definition mod_eq_dec  : forall (m1 m2 : mod), {m1 = m2} + {m1 <> m2}.
       refine (fix mod_eq_dec (m1 m2 : mod) :=
-      match m1, m2 with
-      | base, base => left eq_refl
-      | base, cons m2' p => right (fun eq => _)
-      | cons m1' p, base => right (fun eq => _)
-      | cons m1' p, cons m2' q =>
-          match EqBool.eq_dec p q with
-          | left eq_p_q =>
-              match mod_eq_dec m1' m2' with
-              | left eq_12 => left _
-              | right neq_12 => right (fun eq => _)
-              end
-          | right neq_p_q => right (fun eq => _)
-      end
-      end).
+                match m1, m2 with
+                | base, base => left eq_refl
+                | base, cons m2' p => right (fun eq => _)
+                | cons m1' p, base => right (fun eq => _)
+                | cons m1' p, cons m2' q =>
+                    match EqBool.eq_dec p q with
+                    | left eq_p_q =>
+                        match mod_eq_dec m1' m2' with
+                        | left eq_12 => left _
+                        | right neq_12 => right (fun eq => _)
+                        end
+                    | right neq_p_q => right (fun eq => _)
+                    end
+                end).
       all: try (inversion eq; fail).
       - rewrite eq_p_q; rewrite eq_12; reflexivity.
       - inversion eq; subst; apply neq_12; reflexivity.
@@ -400,16 +451,16 @@ Section CorpsSyntax.
       | left e => ltac:(rewrite e; exact (Some (POT_refl m2)))
       | right neq =>
           match m2 with
-            | base =>
-                match m1 with
-                | base => Some (POT_refl base)
-                | _ => None
-                end
-            | cons m2' q =>
-                match PrefixOfT_dec m1 m2' with
-                | Some pfxt => Some (POT_step q pfxt)
-                | None => None
-                end
+          | base =>
+              match m1 with
+              | base => Some (POT_refl base)
+              | _ => None
+              end
+          | cons m2' q =>
+              match PrefixOfT_dec m1 m2' with
+              | Some pfxt => Some (POT_step q pfxt)
+              | None => None
+              end
           end
       end.
 
@@ -463,7 +514,7 @@ Section CorpsSyntax.
            clear eq pfx IHm1 m1.
            exfalso; induction m2; cbn in pfx0; inversion pfx0.
     Qed.           
-      
+    
     Lemma PrefixT_cons_inv : forall m p, PrefixOfT (cons m p) m -> False.
     Proof using.
       intros m p.
@@ -489,7 +540,7 @@ Section CorpsSyntax.
       | base => POT_refl m1
       | cons m2 p => POT_step p (PrefixT_peel m1 m2)
       end.
-      
+    
     Lemma remove_PrefixT_app : forall (m1 m2 : mod) (pfx : PrefixOfT m1 (mod_app m1 m2)),
         remove_PrefixT pfx = m2.
     Proof using.
@@ -501,15 +552,15 @@ Section CorpsSyntax.
     
     Definition remove_Prefix' : forall (m1 m2 : mod) (pfx : PrefixOf m1 m2), mod.
       refine (fix remove_Prefix' m1 m2 pfx :=
-      match mod_eq_dec m1 m2 with
-      | left _ => base
-      | right neq =>
-          (match m2 as a return a = m2 -> mod with
-          | base => fun eq => False_rect mod _
-          | cons m2' p =>
-              fun eq => cons (@remove_Prefix' m1 m2' _) p
-          end) eq_refl
-      end).
+                match mod_eq_dec m1 m2 with
+                | left _ => base
+                | right neq =>
+                    (match m2 as a return a = m2 -> mod with
+                     | base => fun eq => False_rect mod _
+                     | cons m2' p =>
+                         fun eq => cons (@remove_Prefix' m1 m2' _) p
+                     end) eq_refl
+                end).
       - rewrite <- eq in pfx. inversion pfx; subst. destruct (neq eq_refl).
       - subst; inversion pfx; subst; [exfalso; apply neq; reflexivity | exact pf].
     Defined.
@@ -546,7 +597,7 @@ Section CorpsSyntax.
       - destruct IHpfx as [l' eq].
         exists (l' ++ [p]). apply remove_list_prefix_front. exact eq.
     Qed.
-      
+    
     
     (* Lemma remove_prefix_prime : forall (m1 m2 : mod) (pfx : PrefixOf m1 m2), *)
     (*     remove_Prefix m1 m2 = Some (remove_Prefix' pfx). *)
@@ -567,7 +618,7 @@ Section CorpsSyntax.
     (*       remove_Prefix' m1 (cons m2 p) (PO_step pf' p) (right neq) := cons (remove_Prefix' m1 m2 pf')     *)
     (*     } *)
     (*   }. *)
-      
+    
   End Modality.
 
 
@@ -679,15 +730,15 @@ Section CorpsSyntax.
     
     Definition remove_lock (Γ : Ctxt) (m : mod) : option Ctxt.
       refine (match PrefixOfT_dec m (locks Γ 0) with
-      | None => None
-      | Some pfx =>
-          Some ({|
-                vars n :=  vars Γ n;
-                locks n := @remove_PrefixT m (locks Γ n) (prefixT_prefix_trans pfx (@locks_mono Γ 0 n ltac:(lia)));
-                all_locks := @remove_PrefixT m (all_locks Γ) (prefixT_prefix_trans pfx (@locks_bound Γ 0));
-                locks_mono := _;
-                locks_bound := _;
-              |})
+              | None => None
+              | Some pfx =>
+                  Some ({|
+                        vars n :=  vars Γ n;
+                        locks n := @remove_PrefixT m (locks Γ n) (prefixT_prefix_trans pfx (@locks_mono Γ 0 n ltac:(lia)));
+                        all_locks := @remove_PrefixT m (all_locks Γ) (prefixT_prefix_trans pfx (@locks_bound Γ 0));
+                        locks_mono := _;
+                        locks_bound := _;
+                      |})
               end).
       - intros n m0 H0; apply remove_prefix_mono; apply (locks_mono Γ H0).
       - intros n; apply remove_prefix_mono; apply (locks_bound Γ).
@@ -750,6 +801,16 @@ Section CorpsSyntax.
         Equivalence_Symmetric := CtxtEquivSym;
         Equivalence_Transitive := CtxtEquivTrans;
       |}.
+
+    Lemma add_base_lock : forall Γ, ctxt_equiv Γ (add_lock Γ base).
+    Proof using.
+      intro Γ; split; [|split]; intros; cbn; try rewrite mod_base_app; reflexivity.
+    Qed.
+
+    Lemma add_two_locks : forall Γ m1 m2, ctxt_equiv (add_lock Γ (mod_app m1 m2)) (add_lock (add_lock Γ m2) m1).
+    Proof using.
+      intros Γ m1 m2; split; [|split]; intros; cbn; try reflexivity; apply mod_app_assoc.
+    Qed.
 
     Inductive FiniteCtxt : Type :=
     | emptyFC : FiniteCtxt
@@ -1073,7 +1134,7 @@ Section CorpsSyntax.
         repeat match goal with
           | [ |- ?a = ?a ] => reflexivity
           | [ IH : forall ξ σ, subst (ren ?e ξ) σ = subst ?e (fun n => σ (ξ n))
-                          |- context[subst (ren ?e ?ξ) ?σ]] =>
+                               |- context[subst (ren ?e ?ξ) ?σ]] =>
               rewrite (IH ξ σ)
           | [ |- context[subst ?e (fun n => substup σ (renup ξ n))]] =>
               rewrite (subst_ext (fun n => substup σ (renup ξ n)) (substup (fun n => σ (ξ n)))
@@ -1088,7 +1149,7 @@ Section CorpsSyntax.
         repeat match goal with
           | [ |- ?a = ?a ] => reflexivity
           | [ IH : forall σ ξ, ren (subst ?e σ) ξ = subst ?e (fun n => ren (σ n) ξ)
-                          |- context[ren (subst ?e ?σ) ?ξ]] =>
+                               |- context[ren (subst ?e ?σ) ?ξ]] =>
               rewrite (IH σ ξ)
           | [|- context[subst ?e (fun n => ren (substup ?σ n) (renup ?ξ))]] =>
               rewrite (subst_ext (fun n => ren (substup σ n) (renup ξ))
@@ -1112,7 +1173,7 @@ Section CorpsSyntax.
         repeat match goal with
           | [ |- ?a = ?a ] => reflexivity
           | [ IH : forall σ1 σ2, subst (subst ?e σ1) σ2 = subst ?e (fun n => subst (σ1 n) σ2)
-                            |- context[subst (subst ?e ?f) ?g]] =>
+                                 |- context[subst (subst ?e ?f) ?g]] =>
               rewrite (IH f g)
           | [ |- context[subst ?e (fun n => subst (substup ?f n) (substup ?g))]] =>
               rewrite (subst_ext (fun n => subst (substup f n) (substup g))
@@ -1231,7 +1292,7 @@ Section CorpsSyntax.
     Proof using.
       intros e clsd n; apply (closed_above_mono' clsd). apply le_0_n.
     Qed.
-      
+    
     Lemma closed_above_ren_id : forall e ξ n,
         (forall m, m < n -> ξ m = m) ->
         closed_above e n ->
@@ -1370,7 +1431,7 @@ Section CorpsSyntax.
     Proof using.
       intros e n clsd; induction clsd; cbn; lia.
     Qed.
- 
+    
   End Closure.
 End CorpsSyntax.
 
@@ -1378,4 +1439,4 @@ Arguments type : clear implicits.
 Arguments expr : clear implicits.
 Arguments mod : clear implicits.
 
-    
+

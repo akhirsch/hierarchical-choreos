@@ -56,21 +56,18 @@ Section CorpsTypes.
         (pf1 : Typed Γ e1 (ArrT τ1 τ2))
         (pf2 : Typed Γ e2 τ1)
       : Typed Γ (appE e1 e2) τ2
-    | SendTyping {Γ Γ' : Ctxt} {p q : PName} {Δ : FiniteCtxt} {e : expr} {τ : type}
-        (pf : Typed (addFiniteCtxt (add_lock Γ p) Δ) e τ)
+    | SendTyping {Γ : Ctxt} {p q : PName} {e : expr} {τ : type}
+        (pf : Typed Γ e (AtT p τ))
         (cs : CanSend (cons (all_locks Γ) p) (cons (all_locks Γ) q))
-        (eqv : ctxt_equiv Γ' (addFiniteCtxt (add_lock Γ q) Δ))
-      : Typed Γ' (send e p Δ q) τ
-    | UpTyping {Γ Γ' : Ctxt} {p : PName} {Δ : FiniteCtxt} {e : expr} {τ : type}
-        (pf : Typed (addFiniteCtxt Γ Δ) e τ)
+      : Typed Γ (send e p emptyFC q) (AtT q τ)
+    | UpTyping {Γ : Ctxt} {p : PName} {e : expr} {τ : type}
         (cu : CanUp (all_locks Γ) (cons (all_locks Γ) p))
-        (eqv : ctxt_equiv Γ' (addFiniteCtxt (add_lock Γ p) Δ))
-      : Typed Γ' (up e p Δ) τ
-    | DownTyping {Γ Γ' : Ctxt} {p : PName} {Δ : FiniteCtxt} {e : expr} {τ : type}
-        (pf : Typed (addFiniteCtxt (add_lock Γ p) Δ) e τ)
-        (cu : CanDown (cons (all_locks Γ) p) (all_locks Γ))
-        (eqv : ctxt_equiv Γ' (addFiniteCtxt Γ Δ))
-      : Typed Γ' (down e p Δ) τ
+        (pf : Typed Γ e τ)
+      : Typed Γ (up e p emptyFC) (AtT p τ)
+    | DownTyping {Γ : Ctxt} {p : PName} {e : expr} {τ : type}
+        (cd : CanDown (cons (all_locks Γ) p) (all_locks Γ))
+        (pf : Typed Γ e (AtT p τ))
+      : Typed Γ (down e p emptyFC) τ
     .
 
     Theorem add_lock_ext : forall (Γ Δ : Ctxt) m, ctxt_equiv Γ Δ -> ctxt_equiv (add_lock Γ m) (add_lock Δ m).
@@ -131,12 +128,12 @@ Section CorpsTypes.
               end
           end;
         try (econstructor; eauto; fail).
-      - apply @SendTyping with (Γ := Γ); auto.
-        transitivity Γ'; auto. symmetry; assumption.
-      - apply @UpTyping with (Γ := Γ); auto.
-        transitivity Γ'; auto. symmetry; assumption.
-      - apply @DownTyping with (Γ := Γ); auto.
-        transitivity Γ'; auto. symmetry; assumption.
+      - apply @SendTyping with (Γ := Δ'); auto.
+        rewrite <- all_locks_eq; exact cs.
+      - apply @UpTyping with (Γ := Δ'); auto.
+        rewrite <- all_locks_eq; exact cu.
+      - apply @DownTyping with (Γ := Δ'); auto.
+        rewrite <- all_locks_eq; exact cd.
     Qed.
 
     Definition ctxt_ren (Γ : Ctxt) (ξ : renaming) (mono : forall n m, n <= m -> PrefixOf (locks Γ (ξ n)) (locks Γ (ξ m))): Ctxt :=
@@ -148,16 +145,30 @@ Section CorpsTypes.
         locks_bound n := locks_bound Γ (ξ n);
       |}.
 
+    Lemma renup_mono : forall (ξ : renaming) (Γ : Ctxt) g τ, (forall n m, n <= m -> PrefixOf (locks Γ (ξ n)) (locks Γ (ξ m))) ->
+                                                        forall n m, n <= m -> PrefixOf (locks (add_var Γ g τ) (renup ξ n)) (locks (add_var Γ g τ) (renup ξ m)).
+    Proof using.
+      intros ξ Γ g τ mono n m n_le_m.
+      destruct n; destruct m; cbn.
+      - constructor.
+      - apply PrefixOf_base.
+      - inversion n_le_m.
+      - apply mono; apply le_S_n; exact n_le_m.
+    Qed.
+
+    Lemma lock_ren_mono : forall (ξ : renaming) (Γ : Ctxt) p, (forall n m, n <= m -> PrefixOf (locks Γ (ξ n)) (locks Γ (ξ m))) ->
+                                                     forall n m, n <= m -> PrefixOf (locks (add_lock Γ p) (ξ n)) (locks (add_lock Γ p) (ξ m)).
+    Proof using.
+      intros ξ Γ p mono n m n_le_m.
+      cbn. apply PrefixOf_app_mono; auto.
+    Qed.
+
     Lemma weakening : forall (Γ Δ : Ctxt) (e : expr) (ξ : renaming) (τ : type) mono,
         ctxt_equiv (ctxt_ren Γ ξ mono) Δ ->
         Typed Δ e τ -> Typed Γ (ren e ξ) τ.
     Proof using.
       intros Γ Δ e ξ τ mono eqv typ; revert Γ ξ mono eqv; induction typ;
         intros Γ'' ξ mono ctxt_eqv; cbn.
-      all: assert (forall g τ n m, n <= m -> PrefixOf (locks (add_var Γ'' g τ) (renup ξ n)) (locks (add_var Γ'' g τ) (renup ξ m))) as mono_add_var by
-      (intros g τ0 n0 m0 H0;
-      cbn; destruct n0; destruct m0; cbn; [constructor | apply base_Prefix | inversion H0 |];
-      apply mono; apply le_S_n; auto).
       all: pose proof ctxt_eqv as [vars_eqv [locks_eqv al_eqv]].
       all: try (econstructor; eauto; fail).
       - apply VarTyping with (m := m).  rewrite <- pf1; rewrite <- vars_eqv; cbn; reflexivity.
@@ -170,7 +181,7 @@ Section CorpsTypes.
         -- unfold ctxt_ren; cbn. f_equal.
            rewrite <- al_eqv. unfold ctxt_ren; cbn; reflexivity.
       - econstructor; eauto.
-        apply IHtyp2 with (mono := mono_add_var p τ).
+        apply IHtyp2 with (mono := renup_mono ξ Γ'' p τ mono).
         split; [|split]; auto.
         all: intro x; destruct x; cbn; auto.
         -- rewrite <- vars_eqv; unfold ctxt_ren; cbn; auto.
@@ -178,65 +189,91 @@ Section CorpsTypes.
       - eapply CaseTyping;
           [
             eapply IHtyp1; eauto
-          | apply IHtyp2 with (mono := mono_add_var base τ1)
-          | eapply IHtyp3 with (mono := mono_add_var base τ2)
+          | apply IHtyp2 with (mono := renup_mono ξ Γ'' base τ1 mono)
+          | eapply IHtyp3 with (mono := renup_mono ξ Γ'' base τ2 mono)
           ].
         all: split; [|split]; auto; intro x; destruct x; cbn; auto.
         1, 3: apply vars_eqv; auto.
         all: apply locks_eqv; auto.
       - eapply LamTyping.
-          
-      Admitted.
-
+        apply IHtyp with (mono := renup_mono ξ Γ'' base τ1 mono).
+        split; [|split]; auto.
+        -- intro x; destruct x; cbn; auto.
+           cbn in vars_eqv; apply vars_eqv.
+        -- intro x; destruct x; cbn; auto.
+           apply locks_eqv.
+      - cbn in *; eapply @SendTyping with (Γ := Γ''); eauto.
+        rewrite al_eqv; auto.
+      - cbn in *; eapply @UpTyping with (Γ := Γ''); eauto.
+        rewrite al_eqv; auto.
+      - cbn in *; eapply @DownTyping with (Γ := Γ''); eauto.
+        rewrite al_eqv; auto.
+    Qed.
 
   End TypeSystem.
 
   Section Substitution.
 
     Definition TypedSubst (Γ : Ctxt) (σ : substitution) (Δ : Ctxt) :=
-      (* forall x, match PrefixOfT_dec (locks Γ x) (fst (vars Γ x)) with *)
-      (*      | Some pfxt => Typed (add_lock Δ (remove_PrefixT pfxt)) (σ x) (snd (vars Γ x)) *)
-      (*      | None => True *)
-      (*      end. *)
-      forall x (pfxt : PrefixOfT (locks Γ x) (fst (vars Γ x))),
-        Typed (add_lock Δ (remove_PrefixT pfxt)) (σ x) (snd (vars Γ x)).
-      
+      all_locks Γ = all_locks Δ /\
+      forall x m,
+        mod_app m (locks Γ x) = fst (vars Γ x) -> 
+        Typed (add_lock Δ m) (σ x) (snd (vars Γ x)).
+
+    Lemma id_subst_typed: forall Γ, TypedSubst Γ (fun x => var x) Γ.
+    Proof using.
+      intros Γ; split; [reflexivity | intros x m eq].
+      apply VarTyping with (m := fst (vars Γ x)); cbn; auto.
+      apply surjective_pairing.
+    Qed.      
+
     Lemma substup_typed : forall Γ Δ σ g τ,
         TypedSubst Γ σ Δ -> TypedSubst (add_var Γ g τ) (substup σ) (add_var Δ g τ).
     Proof using.
-      intros Γ Δ σ g τ typd; unfold TypedSubst in *; intros x pfxt.
-      destruct x; cbn in *.
-      - econstructor; eauto; cbn.
-        dependent induction pfxt; cbn; auto.
-        specialize (IHpfxt pfxt eq_refl ltac:(reflexivity)).
-        inversion IHpfxt; repeat f_equal; auto.
-      - eapply weakening with (Δ := add_lock Δ (remove_PrefixT pfxt)); [| apply typd].
-        split; [| split]; cbn; [intro y | intro y |]; reflexivity. 
+      intros Γ Δ σ g τ [al_eqv typd]; split; [exact al_eqv|]; intros x m eq.
+      destruct x; cbn in *; subst.
+      - apply VarTyping with (m := g); cbn; reflexivity.
+      - eapply weakening with (Δ := add_lock Δ m).
+        split; [|split]; try (intro y); cbn; auto.
+        apply typd; auto.
         Unshelve.
-        intros n m n_le_m; cbn; apply PrefixOf_app; apply locks_mono; auto.
+        intros n m0 H0; cbn; apply mod_app_mono_l; apply locks_mono; auto.
     Qed.
-        
-    
+
     Theorem subst_typed : forall Γ Δ e σ τ, Typed Γ e τ -> TypedSubst Γ σ Δ -> Typed Δ (subst e σ) τ.
     Proof using.
       intros Γ Δ e σ τ typed; revert Δ σ; induction typed; try (rename σ into τ');
-        intros Γ'' σ typeds; cbn.
-      all: try (econstructor; eauto; fail).
-      - unfold TypedSubst in typeds; specialize (typeds n).
-        rewrite pf1 in typeds; rewrite pf2 in typeds; cbn in typeds.
-        destruct (PrefixOfT_dec m m) eqn:eq.
-        2: { exfalso; destruct (Prefix2PrefixT (PO_refl m)) as [pfxt eq'];
-             rewrite eq' in eq; inversion eq. }
-        assert (p = POT_refl m) by apply UIprefixT; subst. cbn in typeds.
-        apply type_ext with (Γ := add_lock Γ'' base); auto.
-        split; [| split]; cbn; auto; [intro x|]; apply mod_base_app.
-      - apply AtTyping.
-        apply IHtyped.
-        unfold TypedSubst; unfold TypedSubst in typeds.
-        intro x; specialize (typeds x); cbn.
-        destruct (PrefixOfT_dec (mod_app p (locks Γ x)) (fst (vars Γ x))) as [pfxt |]; [| exact I].
-        
-                                             
+        intros Γ'' σ typeds; cbn;
+        try (econstructor; eauto;
+             repeat lazymatch goal with
+               | [ H : ?P |- ?P ] => exact H
+               | [ IH : forall Δ σ, TypedSubst ?Γ σ Δ -> Typed Δ (subst ?e σ) ?τ, H : TypedSubst ?Γ ?σ ?Δ |- Typed ?Δ (subst ?e ?σ) ?τ ] =>
+                   exact (IH Δ σ H)
+               | [H : TypedSubst ?Γ ?σ ?Δ |- context[add_var ?Δ ?p ?τ] ] =>
+                   lazymatch goal with
+                   | [ _ : TypedSubst (add_var Γ p τ) (substup σ) (add_var Δ p τ) |- _ ] => fail
+                   | _ => 
+                       assert (TypedSubst (add_var Γ p τ) (substup σ) (add_var Δ p τ)) by (exact (substup_typed Γ Δ σ p τ H))
+                   end
+               | [ H : TypedSubst ?Γ ?σ ?Δ |- context[all_locks ?Δ]] =>
+                   lazymatch goal with
+                   | [_ : all_locks Γ = all_locks Δ |- _ ] => fail
+                   | _ => let eq := fresh "eq" in assert (all_locks Γ = all_locks Δ) as eq by (destruct H as [al_eqv _]; exact al_eqv);
+                                                rewrite <- eq
+                   end
+          end; fail).
+      - destruct typeds as [al_eqv typeds].
+        specialize (typeds n base); cbn in typeds.
+        rewrite pf1 in typeds; cbn in typeds.
+        rewrite mod_base_app in typeds; specialize (typeds pf2).
+        apply type_ext with (Γ := add_lock Γ'' base); [exact typeds | symmetry; apply add_base_lock].
+      - apply AtTyping; apply IHtyped.
+        destruct typeds as [al_eqv typeds]; split; [cbn; rewrite al_eqv; reflexivity|].
+        intros x m; cbn; intro eq.
+        apply type_ext with (Γ := add_lock Γ'' (mod_app m p)); [|apply add_two_locks].
+        rewrite <- mod_app_assoc in eq.
+        apply typeds; exact eq.
+    Qed.                                             
 
   (* Section Decidability. *)
 
