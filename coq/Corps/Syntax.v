@@ -8,7 +8,6 @@ From Stdlib Require Import Logic.Eqdep_dec.
 From Stdlib Require Import Program.Equality.
 From Stdlib Require Import Program.Wf.
 
-
 Set Implicit Arguments.
 Section CorpsSyntax.
 
@@ -842,6 +841,13 @@ Section CorpsSyntax.
       | varFC m τ Δ => addFiniteCtxt (add_var Γ m τ) Δ
       | lockFC m Δ => addFiniteCtxt (add_lock Γ m) Δ
       end.
+
+    Fixpoint FiniteCtxtSize (Δ : FiniteCtxt) : nat :=
+      match Δ with
+      | emptyFC => 0
+      | varFC _ _ Δ => S (FiniteCtxtSize Δ)
+      | lockFC _ Δ => FiniteCtxtSize Δ
+      end.
     
   End Contexts.
 
@@ -919,6 +925,26 @@ Section CorpsSyntax.
         | S n => S (ξ n)
         end.
 
+    Definition renup_many (ξ : renaming) (n : nat) : renaming :=
+      fun m =>
+        if PeanoNat.Nat.ltb m n
+        then m
+        else n + (ξ (m - n)).
+
+    Fixpoint renup_many' (ξ : renaming) (n : nat) : renaming :=
+      match n with
+      | 0 => ξ
+      | S n' => renup_many' (renup ξ) n'
+      end.
+
+    (* Lemma renup_many_spec : forall ξ n m, renup_many ξ n m = renup_many' ξ n m. *)
+    (* Proof using. *)
+    (*   intros ξ n; revert ξ; induction n; intros ξ m; cbn. *)
+    (*   - f_equal; apply PeanoNat.Nat.sub_0_r. *)
+    (*   - rewrite <- IHn; unfold renup_many. *)
+    (*     destruct (PeanoNat.Nat.ltb_spec m (S n)); *)
+    (*       destruct (PeanoNat.Nat.ltb_spec m n); auto. *)
+        
     Lemma renup_ext : forall (ξ1 ξ2 : renaming),
         (forall n, ξ1 n = ξ2 n) ->
         forall n, (renup ξ1) n = (renup ξ2) n.
@@ -1020,6 +1046,51 @@ Section CorpsSyntax.
         | S n => ren (σ n) S
         end.
 
+    Definition substup_many (σ : substitution) (n : nat) : substitution :=
+      fun m =>
+        if PeanoNat.Nat.ltb m n
+        then var m
+        else ren (σ (m - n)) (fun k => n + k).
+
+    Fixpoint substup_many' (σ : substitution) (n : nat) : substitution :=
+      match n with
+      | 0 => σ
+      | S n' => substup_many' (substup σ) n'
+      end.
+
+    Lemma substup_many_eq : forall σ n m, substup_many σ n m = substup_many' σ n m.
+    Proof using.
+      intros σ n m; revert σ m; induction n; intros σ m; cbn.
+      - rewrite PeanoNat.Nat.sub_0_r; rewrite ren_id; reflexivity.
+      - rewrite <- IHn. unfold substup_many.
+        destruct (PeanoNat.Nat.ltb_spec m n); cbn;
+          destruct (PeanoNat.Nat.leb_spec m n); cbn; auto.
+        -- exfalso; apply (PeanoNat.Nat.lt_irrefl n); transitivity m; auto.
+        -- assert (n = m) by (apply PeanoNat.Nat.le_antisymm; auto); subst.
+           rewrite PeanoNat.Nat.sub_diag; cbn.
+           rewrite <- plus_n_O; reflexivity.
+        -- assert (m - n <> 0) by (apply PeanoNat.Nat.sub_gt; exact H1).
+           assert (exists k, m - n = S k). destruct (m - n) as [|k]; [exfalso; apply H2; reflexivity| exists k; reflexivity].
+           destruct H3 as [k eq_k]; rewrite eq_k; cbn.
+           rewrite ren_fusion.
+           assert (m - S n = k) by (rewrite PeanoNat.Nat.sub_succ_r; rewrite eq_k; cbn; reflexivity).
+           rewrite H3; apply ren_ext; intro j. apply plus_n_Sm.
+    Qed.
+
+    Lemma substup_many1 : forall σ n, substup σ n = substup_many σ 1 n.
+    Proof using.
+      intros σ n; destruct n; cbn; auto.
+      rewrite PeanoNat.Nat.sub_0_r.
+      reflexivity.
+    Qed.
+
+    Lemma substup_many_ext : forall σ1 σ2,
+        (forall n, σ1 n = σ2 n) ->
+        forall n m, substup_many σ1 n m = substup_many σ2 n m.
+    Proof using.
+      intros σ1 σ2 ext_eq n m; unfold substup_many; destruct (PeanoNat.Nat.ltb m n); [|rewrite ext_eq]; reflexivity.
+    Qed.
+
     Lemma substup_ext : forall σ1 σ2,
         (forall n, σ1 n = σ2 n) ->
         forall n, substup σ1 n = substup σ2 n.
@@ -1027,11 +1098,31 @@ Section CorpsSyntax.
       intros σ1 σ2 ext_eq n; destruct n; cbn; [|rewrite ext_eq]; reflexivity.
     Qed.
 
+    Lemma id_substup_many : forall n m, substup_many id_substitution n m = id_substitution m.
+    Proof using.
+      intros; unfold substup_many; unfold id_substitution; destruct (PeanoNat.Nat.ltb_spec m n); cbn; [reflexivity|].
+      f_equal.
+      induction n; cbn.
+      apply PeanoNat.Nat.sub_0_r.
+      assert (n < m) as H1 by (rewrite PeanoNat.Nat.le_succ_l in H0; exact H0).
+      rewrite PeanoNat.Nat.sub_succ_r.
+      rewrite PeanoNat.Nat.add_pred_r.
+      rewrite PeanoNat.Nat.lt_succ_pred with (z := n).
+      -- apply IHn; apply PeanoNat.Nat.lt_le_incl; exact H1.
+      --rewrite <- Arith_base.le_plus_minus_stt.
+        rewrite PeanoNat.Nat.le_succ_l in H0; exact H0.
+        apply PeanoNat.Nat.lt_le_incl; exact H1.
+      -- apply PeanoNat.Nat.sub_gt; exact H1.
+    Qed.
+
     Lemma id_substup :
       forall n, substup id_substitution n = id_substitution n.
     Proof using.
       intros n; destruct n; unfold id_substitution; cbn; reflexivity.
     Qed.
+
+    (* Lemma renup_subst_manyup : forall ξ n m, *)
+    (*     (fun k => var (renup ξ k)) m *)
 
     Lemma renup_substup : forall ξ n,
         (fun n => var (renup ξ n)) n = substup (fun n => var (ξ n)) n.
@@ -1077,6 +1168,7 @@ Section CorpsSyntax.
       | efql e => efql (subst e σ)
       | lam t e => lam t (subst e (substup σ))
       | appE e1 e2 => appE (subst e1 σ) (subst e2 σ)
+      (* | send e p Δ q => send (subst e (substup_many σ (FiniteCtxtSize Δ))) p Δ q *)
       | send e p Δ q => send (subst e σ) p Δ q
       | up e p Δ => up (subst e σ) p Δ
       | down e p Δ => down (subst e σ) p Δ
@@ -1095,6 +1187,8 @@ Section CorpsSyntax.
               rewrite (IH f g H)
           | [ H : forall n, ?f n = ?g n |- context[substup ?f] ] =>
               pose proof (substup_ext f g H)
+          | [ H : forall n, ?f n = ?g n |- context[substup_many ?f ?n] ] =>
+              pose proof (substup_many_ext f g H n)
           end.
     Qed.
 
@@ -1110,6 +1204,9 @@ Section CorpsSyntax.
           | [ |- context[subst ?e (substup id_substitution)]] =>
               rewrite (subst_ext (substup id_substitution) id_substitution
                          id_substup e)
+          | [ |- context[subst ?e (substup_many id_substitution ?n)]] =>
+              rewrite (subst_ext (substup_many id_substitution n) id_substitution
+                         (id_substup_many n) e)
           end.
     Qed.
 
@@ -1433,6 +1530,194 @@ Section CorpsSyntax.
     Qed.
     
   End Closure.
+
+  Section Lockpointer.
+
+    Record lockpointer (Γ : Ctxt) (m : mod) :=
+      {
+        index : nat;
+        prefix : mod;
+        pred_index : (index = 0 /\ prefix = base) \/ (exists k, index = S k /\ locks Γ k = prefix);
+        at_index : locks Γ index = mod_app prefix m
+      }.
+
+    Lemma before_index : forall (Γ : Ctxt) (m : mod) (ptr : lockpointer Γ m) (n : nat),
+        n < index ptr ->
+        PrefixOf (locks Γ n) (prefix ptr).
+    Proof using.
+      intros Γ m ptr n n_lt_index.
+      destruct (pred_index ptr) as [[eq0 eq_base] | [k [eqS eq_locks]]].
+      - rewrite eq0 in n_lt_index; inversion n_lt_index.
+      - transitivity (locks Γ k).
+        -- apply locks_mono; rewrite eqS in n_lt_index; apply PeanoNat.lt_n_Sm_le; exact n_lt_index.
+        -- rewrite eq_locks; reflexivity.
+    Qed.
+
+    Fixpoint change_prefix_t {m1 m2 : mod} (pfx1 : PrefixOfT m1 m2) (m3 : mod) : mod :=
+      match pfx1 with
+      | POT_refl _ => m3
+      | POT_step p pfx => cons (change_prefix_t pfx m3) p
+      end.
+
+    Lemma change_prefix_t_prefix : forall {m1 m2 : mod} (pfx : PrefixOfT m1 m2) (m3 : mod),
+        PrefixOf m3 (change_prefix_t pfx m3).
+    Proof using.
+      intros m1 m2 pfx; dependent induction pfx; intro m3; cbn.
+      reflexivity.
+      apply PO_step; apply IHpfx.
+    Qed.
+
+    Fixpoint PrefixT_app (m1 m2 : mod) : PrefixOfT m1 (mod_app m1 m2) :=
+      match m2 with
+      | base => POT_refl m1
+      | cons m2' p => POT_step p (PrefixT_app m1 m2')
+      end.
+
+    Lemma change_prefix_t_spec : forall m1 m2 m3, change_prefix_t (PrefixT_app m1 m2) m3 = mod_app m3 m2.
+    Proof using.
+      intros m1 m2; revert m1; induction m2; intros m1 m3; cbn.
+      reflexivity.
+      f_equal; apply IHm2.
+    Qed.
+
+    Fixpoint change_prefix (m1 m2 m3 : mod) : option mod :=
+      if eqb m1 m2
+      then Some m3
+      else match m2 with
+           | base => None
+           | cons m2' p =>
+               match change_prefix m1 m2' m3 with
+               | None => None
+               | Some m => Some (cons m p)
+               end
+           end.
+
+    Theorem change_prefix_of_prefix : forall (m1 m2 m3 : mod),
+        PrefixOf m1 m2 ->
+        change_prefix m1 m2 m3 <> None.
+    Proof using.
+      intros m1 m2; revert m1; induction m2; intros m1 m3 pfx; cbn; eq_bool; subst; try discriminate.
+      - inversion pfx; subst; exfalso; apply neq; reflexivity.
+      - inversion pfx; subst; [exfalso; apply neq; reflexivity|].
+        destruct (change_prefix m1 m2 m3) eqn:eq; [discriminate|].
+        exfalso; apply IHm2 with (m1 := m1) (m3 := m3); auto.
+    Qed.
+
+    Lemma cons_prefix : forall m1 m2 p, PrefixOf (cons m1 p) m2 -> PrefixOf m1 m2.
+    Proof using H PName.
+      intros m1 m2 p pfx; dependent induction pfx.
+      - apply PO_step; reflexivity.
+      - specialize (IHpfx H m1 p eq_refl); apply PO_step; apply IHpfx.
+    Qed.
+    
+    Lemma extended_suffix_not_prefix : forall m1 m2 p, PrefixOf m1 m2 -> ~ (PrefixOf (cons m2 p) m1).
+    Proof using H PName.
+      intros m1; induction m1; intros m2 q pfx1 pfx2.
+      - inversion pfx2.
+      - inversion pfx2; subst.
+        apply IHm1 with (m2 := m1) (p := p); [reflexivity | exact pfx1].
+        apply (IHm1 m2 q); [apply cons_prefix with (p := p); exact pfx1 | exact pf].
+    Qed.
+
+    Theorem change_prefix_of_suffix : forall (m1 m2 m3 : mod),
+        PrefixOf m2 m1 ->
+        change_prefix m1 m2 m3 = None \/ m1 = m2.
+    Proof using.
+      intros m1 m2; revert m1; induction m2; intros m1 m3 pfx; cbn; eq_bool; subst; auto.
+      left.
+      assert (PrefixOf m2 m1). clear IHm2 m3 e neq; dependent induction pfx. apply PO_step; apply PO_refl.
+      specialize (IHpfx H m2 p eq_refl). apply PO_step; exact IHpfx.
+      destruct (IHm2 m1 m3 H0); [rewrite H1; reflexivity| subst].
+      apply extended_suffix_not_prefix  with (p := p) in pfx.
+      exfalso; apply pfx; reflexivity.
+    Qed.      
+
+    Lemma change_prefix_of_prefix' : forall (m1 m2 m2' m3 m4 m4' : mod),
+        change_prefix m1 m2 m3 = Some m4 ->
+        change_prefix m1 m2' m3 = Some m4' ->
+        PrefixOf m2 m2' ->
+        PrefixOf m4 m4'.
+    Proof using.
+      intros m1 m2 m2' m3 m4 m4' H0 H1 pfx2; revert m1 m3 m4 m4' H0 H1; dependent induction pfx2;
+        [| rename m1 into m5; rename m2 into m5']; intros m1 m3 m4 m4' eq0 eq1.
+      - rewrite eq0 in eq1; inversion eq1; reflexivity.
+      - cbn in eq1; cbn in eq0; eq_bool; subst.
+        -- inversion eq1; subst; clear eq1.
+           destruct (change_prefix_of_suffix m4'  (PO_step pfx2 p)); subst.
+           rewrite H0 in eq0; inversion eq0.
+           cbn in eq0; eq_bool; inversion eq0; subst; reflexivity.
+        -- destruct (change_prefix m1 m5' m3) eqn:eq2; inversion eq1; subst; clear eq1.
+           apply PO_step. apply IHpfx2 with (m1 := m1)(m3 := m3); auto.
+    Qed.
+
+    Lemma prefix_of_change_prefix : forall (m1 m2 m3 m4 m5 : mod),
+        change_prefix m1 m2 m3 = Some m4 ->
+        PrefixOf m5 m3 ->
+        PrefixOf m5 m4.
+    Proof using.
+      intros m1 m2; revert m1; induction m2; cbn; intros m1 m3 m4 m5 eq pfx; eq_bool; subst;
+        try (inversion eq; subst; auto; fail).
+      destruct (change_prefix m1 m2 m3) eqn:eq'; inversion eq; subst; clear eq.
+      apply PO_step; eapply IHm2; eauto.
+    Qed.
+
+    Program Definition change_lock (Γ : Ctxt) {m1 : mod} (ptr : lockpointer Γ m1) (m2 : mod) : Ctxt :=
+      {|
+        vars := vars Γ;
+        locks n := if PeanoNat.Nat.leb (index ptr) n
+                   then match change_prefix (mod_app (prefix ptr) m1) (locks Γ n) (mod_app (prefix ptr) m2) with
+                        | Some m => m
+                        | None => _
+                        end
+                   else locks Γ n;
+        all_locks := match change_prefix (mod_app (prefix ptr) m1) (all_locks Γ) (mod_app (prefix ptr) m2) with
+                     | Some m => m
+                     | None => _
+                     end;
+        locks_mono := _;
+        locks_bound := _
+      |}.
+    Next Obligation.
+      destruct (PeanoNat.Nat.leb_spec (index ptr) n);
+        destruct (PeanoNat.Nat.leb_spec (index ptr) m); cbn.
+      - destruct (change_prefix (mod_app (prefix ptr) m1) (locks Γ n) (mod_app (prefix ptr) m2)) eqn:eq.
+        2: { exfalso; eapply change_prefix_of_prefix; [| exact eq].
+             rewrite <- (at_index ptr); apply locks_mono; auto. }
+        destruct (change_prefix (mod_app (prefix ptr) m1) (locks Γ m) (mod_app (prefix ptr) m2)) eqn:eq'.
+        2: { exfalso; eapply change_prefix_of_prefix; [| exact eq'].
+             rewrite <- (at_index ptr); apply locks_mono; auto. }
+        eapply change_prefix_of_prefix'; eauto.
+        apply locks_mono; auto.
+      - pose proof (PeanoNat.Nat.lt_le_trans _ _ _ H2 H1).
+        pose proof (PeanoNat.Nat.lt_le_trans _ _ _ H3 H0).
+        apply PeanoNat.Nat.lt_irrefl in H4. destruct H4.
+      - destruct (change_prefix (mod_app (prefix ptr) m1) (locks Γ m) (mod_app (prefix ptr) m2)) eqn:eq.
+        2: { apply change_prefix_of_prefix in eq; [destruct eq|].
+             transitivity (locks Γ (index ptr)); [|apply (locks_mono Γ); exact H2].
+             rewrite at_index; reflexivity. }
+        transitivity (prefix ptr).
+        apply before_index; exact H1.
+        eapply prefix_of_change_prefix; eauto.
+        apply PrefixOf_app.
+      - apply locks_mono; exact H0.
+    Qed.
+    Next Obligation.
+      destruct (PeanoNat.Nat.leb_spec (index ptr) n).
+      - destruct (change_prefix (mod_app (prefix ptr) m1) (locks Γ n) (mod_app (prefix ptr) m2)) eqn:eq1;
+          [destruct (change_prefix (mod_app (prefix ptr) m1) (all_locks Γ) (mod_app (prefix ptr) m2)) eqn:eq2
+          |  apply change_prefix_of_prefix in eq1; [destruct eq1|];
+             transitivity (locks Γ (index ptr)); [rewrite at_index; reflexivity | apply locks_mono; auto]].
+        -- eapply change_prefix_of_prefix'; eauto. apply locks_bound.
+        -- apply change_prefix_of_prefix in eq2; [destruct eq2|].
+           transitivity (locks Γ (index ptr)); [rewrite at_index; reflexivity | apply locks_bound].
+      - destruct (change_prefix (mod_app (prefix ptr) m1) (all_locks Γ) (mod_app (prefix ptr) m2)) eqn:eq.
+        eapply prefix_of_change_prefix; eauto; transitivity (prefix ptr); [apply before_index; auto | apply PrefixOf_app].
+        apply change_prefix_of_prefix in eq; [destruct eq|].
+        transitivity (locks Γ (index ptr)). rewrite at_index; reflexivity. apply locks_bound.
+    Qed.
+    
+  End Lockpointer.
+  
 End CorpsSyntax.
 
 Arguments type : clear implicits.
