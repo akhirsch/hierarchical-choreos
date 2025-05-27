@@ -258,6 +258,52 @@ Section CorpsSyntax.
       intros m1 m2 m3; induction m3; cbn; intro sfx; auto.
       apply SO_step; auto.
     Qed.
+
+    Fixpoint extract_suffix (m1 m2 : mod) : option mod :=
+      if eqb m1 m2
+      then Some base
+      else if PeanoNat.Nat.ltb (mod_size m1) (mod_size m2)
+           then match m2 with
+                | base => None
+                | cons m2' p =>
+                    match extract_suffix m1 m2' with
+                    | Some m3 => Some (cons m3 p)
+                    | None => None
+                    end
+                end
+           else None.
+
+    Lemma extract_suffix_spec1 : forall m1 m2 m3, extract_suffix m1 m2 = Some m3 -> m2 = mod_app m1 m3.
+    Proof using.
+      intros m1 m2; revert m1; induction m2; cbn; intros m1 m3 eq.
+      - eq_bool; inversion eq; subst;  reflexivity.
+      - eq_bool; [inversion eq; clear eq|]; subst; cbn; [reflexivity|].
+        destruct (PeanoNat.Nat.leb_spec (mod_size m1) (mod_size m2)); [|inversion eq].
+        destruct (extract_suffix m1 m2) eqn:eq'; inversion eq; subst; clear eq.
+        apply IHm2 in eq'; subst; cbn; reflexivity.
+    Qed.
+
+    Lemma extract_suffix_self : forall m, extract_suffix m m = Some base.
+    Proof using.
+      intro m; induction m; cbn; eq_bool; reflexivity.
+    Qed.
+    
+    Lemma extract_suffix_spec2 : forall m1 m2, extract_suffix m1 (mod_app m1 m2) = Some m2.
+    Proof using.
+      intros m1 m2; revert m1; induction m2; cbn; intros m1; cbn; [apply extract_suffix_self|].
+      eq_bool; subst.
+      - exfalso. assert (mod_size m1 = mod_size (cons (mod_app m1 m2) p)) as eq_size by (f_equal; exact eq).
+        cbn in eq_size; rewrite mod_app_size in eq_size; lia.
+      - destruct (PeanoNat.Nat.leb_spec (mod_size m1) (mod_size (mod_app m1 m2))).
+        2: { rewrite mod_app_size in H0; exfalso; lia. }
+        rewrite IHm2; reflexivity.
+    Qed.
+
+    Theorem extract_suffix_spec : forall m1 m2 m3, extract_suffix m1 m2 = Some m3 <-> m2 = mod_app m1 m3.
+    Proof using.
+      intros m1 m2 m3; split; intro H0; [apply extract_suffix_spec1; auto | rewrite H0; apply extract_suffix_spec2].
+    Qed.
+
     
     Inductive PrefixOf : mod -> mod -> Prop :=
     | PO_refl (m : mod) : PrefixOf m m
@@ -316,6 +362,21 @@ Section CorpsSyntax.
       cbn; apply PO_step; apply IHpfx.
     Qed.
 
+    Lemma extract_suffix_prefix : forall m1 m2 m3, extract_suffix m1 m2 = Some m3 -> PrefixOf m1 m2.
+    Proof using.
+      intros m1 m2; revert m1; induction m2; cbn; intros m1 m3 eq; eq_bool; try (inversion eq; subst; reflexivity; fail); subst.
+      destruct (PeanoNat.Nat.leb_spec (mod_size m1) (mod_size m2)); [| inversion eq].
+      destruct (extract_suffix m1 m2) eqn:eq'; inversion eq; subst; clear eq.
+      apply IHm2 in eq'. apply PO_step. exact eq'.
+    Qed.
+
+    Lemma prefix_extract_suffix : forall m1 m2, PrefixOf m1 m2 -> exists m3, extract_suffix m1 m2 = Some m3.
+    Proof using.
+      intros m1 m2 pfx.
+      destruct (PrefixOf_peel pfx) as [m3 eq]; subst.
+      exists m3; apply extract_suffix_spec2.
+    Qed.
+    
     Fixpoint prefixb (m1 m2 : mod) : bool :=
       if eqb m1 m2
       then true
@@ -498,6 +559,22 @@ Section CorpsSyntax.
       apply IHn in H1; auto.
     Qed.
 
+    Lemma Prefix_modapp_inv : forall m1 m2, PrefixOf (mod_app m1 m2) m1 -> m2 = base.
+    Proof using.
+      intro m1; induction m1; intros m2 pfx.
+      - rewrite mod_base_app in pfx; inversion pfx; subst; reflexivity.
+      - inversion pfx; subst.
+        -- clear IHm1 pfx; induction m2; [reflexivity| cbn in *].
+           inversion H2; subst.
+           assert (mod_size (mod_app (cons m1 p) m2) = mod_size m1) as eq by (f_equal; exact H1).
+           rewrite mod_app_size in eq; cbn in eq.
+           apply Snm_false in eq; exfalso; auto.
+        -- assert (cons m1 p = mod_app m1 (cons base p)) as eq by reflexivity; rewrite eq in pf.
+           rewrite mod_app_assoc in pf. apply IHm1 in pf.
+           clear eq pfx IHm1 m1.
+           exfalso; induction m2; cbn in pf; inversion pf.
+    Qed.           
+    
     Lemma PrefixT_modapp_inv : forall m1 m2, PrefixOfT (mod_app m1 m2) m1 -> m2 = base.
     Proof using.
       intro m1; induction m1; intros m2 pfx.
@@ -742,6 +819,76 @@ Section CorpsSyntax.
       - intros n m0 H0; apply remove_prefix_mono; apply (locks_mono Γ H0).
       - intros n; apply remove_prefix_mono; apply (locks_bound Γ).
     Defined.
+
+    Lemma cons_self_no : forall m p, m <> cons m p.
+    Proof using.
+      intro m; induction m; cbn; intros q eq; inversion eq; subst.
+      apply IHm in H1; auto.
+    Qed.
+
+    Lemma cons_app_self_no1 : forall m1 m2 p, m1 <> cons (mod_app m1 m2) p.
+    Proof using.
+      intros m1 m2 p eq. assert (m1 = mod_app m1 (cons m2 p)) as H0 by exact eq; apply mod_app_id_inv in H0.
+      inversion H0.
+    Qed.
+
+    Lemma mod_app_front : forall m1 m2 m3, mod_app m1 m2 = mod_app m1 m3 -> m2 = m3.
+    Proof using.
+      intros m1 m2; revert m1; induction m2; cbn; intros m1 m3 eq.
+      - apply mod_app_id_inv in eq; symmetry; exact eq.
+      - destruct m3; cbn in eq. symmetry in eq; apply cons_app_self_no1 in eq; destruct eq.
+        inversion eq; subst. apply IHm2 in H1; subst. reflexivity.
+    Qed.
+
+    Lemma mod_app_prefix : forall m1 m2 m3, PrefixOf (mod_app m1 m2) (mod_app m1 m3) -> PrefixOf m2 m3.
+    Proof using.
+      intros m1 m2 m3; revert m1 m2; induction m3; intros m1 m2 pfx.
+      - apply Prefix_modapp_inv in pfx; subst; reflexivity.
+      - inversion pfx; subst.
+        2: { specialize (IHm3 _ _ pf); apply PO_step; exact IHm3. }
+        assert (mod_app m1 m2 = mod_app m1 (cons m3 p)) as H0 by (exact H2); apply mod_app_front in H0; subst.
+        reflexivity.
+    Qed.
+
+    Lemma common_suffix : forall m1 m2 m3, PrefixOf m1 m3 -> PrefixOf m2 m3 -> PrefixOf m1 m2 \/ PrefixOf m2 m1.
+    Proof using.
+      intros m1 m2 m3; revert m1 m2; induction m3; intros m1 m2 pfx1 pfx2.
+      - inversion pfx1; inversion pfx2; subst; left; reflexivity.
+      - inversion pfx1; subst; [right; exact pfx2|].
+        inversion pfx2; subst; [left; exact pfx1|].
+        apply IHm3; auto.
+    Qed.
+
+    (* Program Definition replace_lock_prefix (Γ : Ctxt) (m1 m2 : mod) : option Ctxt := *)
+    (*   match extract_suffix m1 (all_locks Γ) with *)
+    (*   | None => None *)
+    (*   | Some m' => *)
+    (*       Some {| *)
+    (*         vars := vars Γ; *)
+    (*         locks n := *)
+    (*           match extract_suffix m1 (locks Γ n) with *)
+    (*           | None => locks Γ n *)
+    (*           | Some m'' => mod_app m2 m'' *)
+    (*           end; *)
+    (*         all_locks := mod_app m2 m' *)
+    (*       |} *)
+    (*   end. *)
+    (* Next Obligation. *)
+    (*   destruct (extract_suffix m1 (locks Γ n)) eqn:eq1. *)
+    (*   - apply extract_suffix_spec1 in eq1; *)
+    (*       assert (PrefixOf (mod_app m1 m0) (locks Γ m)) as pfx by (rewrite <- eq1; apply locks_mono; auto); *)
+    (*       destruct (PrefixOf_peel pfx) as [m2' eq]; *)
+    (*       rewrite mod_app_assoc in eq; *)
+    (*       apply extract_suffix_spec in eq; *)
+    (*       rewrite eq. *)
+    (*     apply mod_app_mono_l. apply PrefixOf_app. *)
+    (*   - destruct (extract_suffix m1 (locks Γ m)) eqn: eq2; [| apply locks_mono; auto]. *)
+    (*     pose proof (extract_suffix_prefix _  _ eq2) as pfx. *)
+    (*     destruct (common_suffix pfx (locks_mono Γ H0)). *)
+    (*     destruct (prefix_extract_suffix H1) as [m3 eq]; rewrite eq in eq1; inversion eq1. *)
+        
+        
+      
 
     Program Definition add_var (Γ : Ctxt) (m : mod) (τ : type) : Ctxt :=
       {|
@@ -1661,62 +1808,70 @@ Section CorpsSyntax.
       apply PO_step; eapply IHm2; eauto.
     Qed.
 
-    Program Definition change_lock (Γ : Ctxt) {m1 : mod} (ptr : lockpointer Γ m1) (m2 : mod) : Ctxt :=
+    Lemma only_prefixes_changable : forall m1 m2 m3 m4,
+        change_prefix m1 m2 m3 = Some m4 ->
+        PrefixOf m1 m2.
+    Proof using.
+      intros m1 m2; revert m1; induction m2; cbn; intros m1 m3 m4 eq;
+        eq_bool; subst; inversion eq; subst; clear eq; try reflexivity.
+      destruct (change_prefix m1 m2 m3) eqn: eq; inversion H1; subst; clear H1.
+      apply PO_step; eapply IHm2; eauto.
+    Qed.
+
+    Lemma prefix_changed_to_prefix : forall m1 m2 m3 m4,
+        change_prefix m1 m2 m3 = Some m4 ->
+        PrefixOf m3 m4.
+    Proof using.
+      intros m1 m2; revert m1; induction m2; cbn; intros m1 m3 m4 eq;
+        eq_bool; subst; inversion eq; subst; clear eq; try reflexivity.
+      destruct (change_prefix m1 m2 m3) eqn: eq; inversion H1; subst; clear H1.
+      apply PO_step; eapply IHm2; eauto.
+    Qed.
+    
+    Program Definition change_lock (Γ : Ctxt) (m1 m2 : mod) (inv : forall n, PrefixOf m1 (locks Γ n) \/ PrefixOf (locks Γ n) m2) :=
       {|
         vars := vars Γ;
-        locks n := if PeanoNat.Nat.leb (index ptr) n
-                   then match change_prefix (mod_app (prefix ptr) m1) (locks Γ n) (mod_app (prefix ptr) m2) with
-                        | Some m => m
-                        | None => _
-                        end
-                   else locks Γ n;
-        all_locks := match change_prefix (mod_app (prefix ptr) m1) (all_locks Γ) (mod_app (prefix ptr) m2) with
+        locks n :=
+          match change_prefix m1 (locks Γ n) m2 with
+          | Some m => m
+          | None => locks Γ n
+          end;
+        all_locks := match change_prefix m1 (all_locks Γ) m2 with
                      | Some m => m
-                     | None => _
-                     end;
-        locks_mono := _;
-        locks_bound := _
+                     | None => all_locks Γ
+                     end
       |}.
     Next Obligation.
-      destruct (PeanoNat.Nat.leb_spec (index ptr) n);
-        destruct (PeanoNat.Nat.leb_spec (index ptr) m); cbn.
-      - destruct (change_prefix (mod_app (prefix ptr) m1) (locks Γ n) (mod_app (prefix ptr) m2)) eqn:eq.
-        2: { exfalso; eapply change_prefix_of_prefix; [| exact eq].
-             rewrite <- (at_index ptr); apply locks_mono; auto. }
-        destruct (change_prefix (mod_app (prefix ptr) m1) (locks Γ m) (mod_app (prefix ptr) m2)) eqn:eq'.
-        2: { exfalso; eapply change_prefix_of_prefix; [| exact eq'].
-             rewrite <- (at_index ptr); apply locks_mono; auto. }
-        eapply change_prefix_of_prefix'; eauto.
-        apply locks_mono; auto.
-      - pose proof (PeanoNat.Nat.lt_le_trans _ _ _ H2 H1).
-        pose proof (PeanoNat.Nat.lt_le_trans _ _ _ H3 H0).
-        apply PeanoNat.Nat.lt_irrefl in H4. destruct H4.
-      - destruct (change_prefix (mod_app (prefix ptr) m1) (locks Γ m) (mod_app (prefix ptr) m2)) eqn:eq.
-        2: { apply change_prefix_of_prefix in eq; [destruct eq|].
-             transitivity (locks Γ (index ptr)); [|apply (locks_mono Γ); exact H2].
-             rewrite at_index; reflexivity. }
-        transitivity (prefix ptr).
-        apply before_index; exact H1.
-        eapply prefix_of_change_prefix; eauto.
-        apply PrefixOf_app.
+      destruct (change_prefix m1 (locks Γ n) m2) eqn:eq0;
+        destruct (change_prefix m1 (locks Γ m) m2) eqn:eq1.
+      - apply change_prefix_of_prefix' with (m1 := m1) (m3 := m2) (m2 := locks Γ n) (m2' := locks Γ m);
+          auto; apply locks_mono; auto.
+      - apply only_prefixes_changable in eq0.
+        assert (PrefixOf m1 (locks Γ m)) 
+          by (transitivity (locks Γ n); [exact eq0 | apply locks_mono; exact H0]).
+        exfalso; apply change_prefix_of_prefix in eq1; auto.
+      - destruct (inv n);
+          [exfalso; apply change_prefix_of_prefix in eq0; auto|].
+        apply prefix_changed_to_prefix in eq1.
+        transitivity m2; auto.
       - apply locks_mono; exact H0.
     Qed.
     Next Obligation.
-      destruct (PeanoNat.Nat.leb_spec (index ptr) n).
-      - destruct (change_prefix (mod_app (prefix ptr) m1) (locks Γ n) (mod_app (prefix ptr) m2)) eqn:eq1;
-          [destruct (change_prefix (mod_app (prefix ptr) m1) (all_locks Γ) (mod_app (prefix ptr) m2)) eqn:eq2
-          |  apply change_prefix_of_prefix in eq1; [destruct eq1|];
-             transitivity (locks Γ (index ptr)); [rewrite at_index; reflexivity | apply locks_mono; auto]].
-        -- eapply change_prefix_of_prefix'; eauto. apply locks_bound.
-        -- apply change_prefix_of_prefix in eq2; [destruct eq2|].
-           transitivity (locks Γ (index ptr)); [rewrite at_index; reflexivity | apply locks_bound].
-      - destruct (change_prefix (mod_app (prefix ptr) m1) (all_locks Γ) (mod_app (prefix ptr) m2)) eqn:eq.
-        eapply prefix_of_change_prefix; eauto; transitivity (prefix ptr); [apply before_index; auto | apply PrefixOf_app].
-        apply change_prefix_of_prefix in eq; [destruct eq|].
-        transitivity (locks Γ (index ptr)). rewrite at_index; reflexivity. apply locks_bound.
+      destruct (change_prefix m1 (locks Γ n) m2) eqn:eq0;
+        destruct (change_prefix m1 (all_locks Γ) m2) eqn:eq1.
+      - apply change_prefix_of_prefix' with (m1 := m1) (m2 := locks Γ n) (m2' := all_locks Γ) (m3 := m2);
+          auto; apply locks_bound.
+      - exfalso. apply only_prefixes_changable in eq0.
+        apply change_prefix_of_prefix in eq1; auto.
+        transitivity (locks Γ n); auto. apply locks_bound.
+      - destruct (inv n); [exfalso; apply change_prefix_of_prefix in eq0; auto|].
+        apply prefix_changed_to_prefix in eq1; transitivity m2; auto.
+      - apply locks_bound.
     Qed.
     
   End Lockpointer.
+
+  
   
 End CorpsSyntax.
 
