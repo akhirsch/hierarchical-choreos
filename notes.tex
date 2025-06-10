@@ -61,7 +61,7 @@
 
 \newcommand{\casev}[1]{\ensuremath{\textsf{case}\;#1 \mathrel{\textsf{of}} \_ \Rightarrow \bot}}
 
-\newcommand{\send}[2]{#1 \mathbin{\leadsto} #2}
+\newcommand{\send}[4]{\textsf{send}^{#1}_{#2\mathbin{\leadsto}#3}\;#4}
 
 \newcommand{\upname}{\textsf{up}}
 \newcommand{\up}[3]{\appfun{\upname_{#1}^{#2}}{#3}}
@@ -119,7 +119,7 @@
     \alternative{\casev{e}}\\
     \alternative{\lam{x}{e}}
     \alternative{\appfun{e_1}{e_2}}\\
-    \alternative{\send{e}{\ell}}
+    \alternative{\send{\Delta}{m_1}{m_2}{e}}
     \alternative{\up{m}{S}{e}}
     \alternative{\down{m}{S}{e}}
   \category[Modalities]{m}
@@ -234,10 +234,10 @@ Different settings result in different interpretations of the calculus.
   \Gamma \vdash \appfun{e_1}{e_2} : \sigma
 }\\
 \infer{
-  \Gamma \vdash e : m.\tau\\
-  \cansend{m}{m'}
+  \Gamma, \lock_{m_1}, \Delta \vdash e : \tau\\
+  \cansend{\locks{\Gamma} \cdot m_1}{\locks{\Gamma} \cdot m_2}
 }{
-  \Gamma \vdash \send{e}{m'} : m'.\tau
+  \Gamma \vdash \send{\Delta}{m_1}{m_2}{e} : \tau
 }\and
 \infer{
   \Gamma \vdash e : \tau\\
@@ -273,7 +273,7 @@ Different settings result in different interpretations of the calculus.
     \alternative{\lam{x}{C}}
     \alternative{\appfun{C}{e}}
     \alternative{\appfun{e}{C}}\\
-    \alternative{\send{C}{m}}
+    \alternative{\send{\Delta}{m_1}{m_2}{C}}
     \alternative{\up{m}{S}{C}}
     \alternative{\down{m}{S}{C}}
   \category[LTS Labels]{\alpha}
