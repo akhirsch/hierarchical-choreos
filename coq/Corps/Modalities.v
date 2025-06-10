@@ -636,7 +636,92 @@ Section Modality.
     - destruct IHpfx as [l' eq].
       exists (l' ++ [p]). apply remove_list_prefix_front. exact eq.
   Qed.
-  
+
+      Program Definition prefixT_prefix_trans {m1 m2 m3 : mod} (pfx : PrefixOfT m1 m2) (pfx' : PrefixOf m2 m3) : PrefixOfT m1 m3 :=
+      match PrefixOfT_dec m1 m3 with
+      | Some pfxt => pfxt
+      | None => False_rect _ _
+      end.
+    Next Obligation.
+      apply PrefixOfT2Prefix in pfx.
+      pose proof (PrefixOf_trans pfx pfx') as pfx''.
+      apply Prefix2PrefixT in pfx''; destruct pfx'' as [pfx'' Hpfx''].
+      rewrite Hpfx'' in Heq_anonymous. inversion Heq_anonymous.
+    Qed.
+
+    Inductive ConsTowerOn : mod -> mod -> Type :=
+    | OneCons (p : PName) (m : mod) : ConsTowerOn (cons m p) m
+    | MoreCons (p : PName) (m1 m2 : mod) (cto : ConsTowerOn m1 m2) : ConsTowerOn (cons m1 p) m2.
+
+    Definition ConsTower_reduce : forall m1 m2 p, ConsTowerOn m1 (cons m2 p) -> ConsTowerOn m1 m2.
+      intros m1 m2 p cto; dependent induction cto.
+      apply MoreCons; apply OneCons.
+      apply MoreCons. apply IHcto; auto.
+    Defined.
+    
+    Definition ConsTowerOn_antirefl : forall m, ConsTowerOn m m -> False.
+      intro m; induction m; intro cto.
+      inversion cto.
+      inversion cto; subst.
+      - clear cto IHm; induction m; inversion H0; subst; apply IHm; auto.
+      - apply ConsTower_reduce in cto0. apply IHm; auto.
+    Defined.
+    
+    Definition ConsTowerOnPrefixT : forall m1 m2, ConsTowerOn m1 m2 -> PrefixOfT m1 m2 -> False.
+      intros m1 m2 cot pfxt; induction pfxt.
+      - apply ConsTowerOn_antirefl with (m := m); exact cot.
+      - apply IHpfxt. apply ConsTower_reduce with (p := p). exact cot.
+    Defined.
+    
+    Lemma UIprefixT : forall m1 m2 (pfx1 pfx2 : PrefixOfT m1 m2), pfx1 = pfx2.
+    Proof using H PName.
+      intros m1 m2 pfx1 pfx2; revert pfx1; induction pfx2; intro pfx1.
+      - destruct m.
+        -- dependent destruction pfx1; reflexivity.
+        -- dependent destruction pfx1. reflexivity.
+           exfalso; apply ConsTowerOnPrefixT with (m1 := cons m p) (m2 := m);
+             [constructor | assumption].
+      - dependent destruction pfx1.
+        -- exfalso; clear IHpfx2; apply ConsTowerOnPrefixT in pfx2; auto; constructor.
+        -- rewrite (IHpfx2 pfx1); reflexivity.
+    Qed.
+
+    Lemma remove_base_prefix : forall (m : mod) (pfx :PrefixOfT base m),
+        remove_PrefixT pfx = m.
+    Proof using.
+      intro m; induction m; intro pfx;
+        dependent destruction pfx; cbn; [| rewrite IHm]; auto.
+    Qed.
+
+    Lemma app_prefix_inj : forall {A :Type} (l1 l2 l3 : list A),
+        l1 ++ l2 = l1 ++ l3 -> l2 = l3.
+    Proof using.
+      intros A l1; induction l1; intros l2 l3; cbn; intro eq; auto.
+      inversion eq; subst. apply IHl1; auto.
+    Qed.
+    
+    Lemma remove_prefix_mono : forall (m1 m2 m3 : mod) (pfx1 : PrefixOfT m3 m1) (pfx2 : PrefixOfT m3 m2),
+        PrefixOf m1 m2 -> PrefixOf (remove_PrefixT pfx1) (remove_PrefixT pfx2).
+    Proof using.
+      intros m1 m2 m3 pfx1 pfx2 pfx12.
+      destruct  (PrefixOf_peel (PrefixOfT2Prefix  pfx1)) as [m4 eq1].
+      destruct (PrefixOf_peel (PrefixOfT2Prefix pfx2)) as [m5 eq2].
+      destruct (PrefixOf_peel pfx12) as [m6 eq3]; subst.
+      rewrite <- (mod2list2mod m3) in eq3;
+        rewrite <- (mod2list2mod m4) in eq3;
+        rewrite <- (mod2list2mod m5) in eq3;
+        rewrite <- (mod2list2mod m6) in eq3.
+      repeat rewrite <- app2mod_app in eq3.
+      apply list2mod_inj in eq3.
+      rewrite <- app_assoc in eq3.
+      apply app_prefix_inj in eq3.
+      assert (list2mod (mod2list m5) = list2mod (mod2list m4 ++ mod2list m6)) as eq4 by (f_equal; exact eq3).      
+      rewrite app2mod_app in eq4.
+      repeat rewrite mod2list2mod in eq4; subst.
+      repeat rewrite remove_PrefixT_app.
+      apply PrefixOf_app.
+    Qed.
+
   
   (* Lemma remove_prefix_prime : forall (m1 m2 : mod) (pfx : PrefixOf m1 m2), *)
   (*     remove_Prefix m1 m2 = Some (remove_Prefix' pfx). *)

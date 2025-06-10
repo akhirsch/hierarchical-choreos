@@ -2,6 +2,8 @@
 -R Corps Corps
 
 Base/EqBool.v
+Corps/Modalities.v
 Corps/Syntax.v
+Corps/Contexts.v
 Corps/Types.v
 Corps/Beta.v
