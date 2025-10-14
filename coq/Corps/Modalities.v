@@ -398,6 +398,11 @@ Section Modality.
              end
          end.
 
+  Lemma PrefixOf_m_base : forall m, PrefixOf m base -> m = base.
+  Proof using.
+    intros m pfx; inversion pfx; subst.  reflexivity.
+  Qed.
+
   Lemma readd_remove_prefix : forall m1 m2 m3, remove_Prefix m1 m2 = Some m3 -> mod_app m1 m3 = m2.
   Proof using.
     intros m1 m2; revert m1; induction m2; intros m1 m3 eq; cbn in *;
@@ -755,6 +760,12 @@ Section Modality.
       inversion H0.
     Qed.
 
+    Lemma mod_app_back : forall m1 m2 m3, mod_app m1 m3 = mod_app m2 m3 -> m1 = m2.
+    Proof using.
+      intros m1 m2 m3; revert m1 m2; induction m3; cbn; intros m1 m2 eq; auto.
+      inversion eq; subst. apply IHm3; auto.
+    Qed.
+
     Lemma mod_app_front : forall m1 m2 m3, mod_app m1 m2 = mod_app m1 m3 -> m2 = m3.
     Proof using.
       intros m1 m2; revert m1; induction m2; cbn; intros m1 m3 eq.
@@ -910,5 +921,46 @@ Section Modality.
       apply PO_step; eapply IHm2; eauto.
     Qed.
 
-  
+
+    Lemma change_common_prefix : forall m1 m2 m3 m m1' m2' m3',
+        m1 = mod_app m m1' ->
+        m2 = mod_app m m2' ->
+        m3 = mod_app m m3' ->
+        change_prefix m1 m2 m3 = match change_prefix m1' m2' m3' with
+                                 | Some m' => Some (mod_app m m')
+                                 | None => None
+                                 end.
+    Proof using.
+      intros m1 m2; revert m1; induction m2 as [| m2 IHm2 p]; intros m1 m3 m m1' m2' m3' H0 H1 H2; cbn; eq_bool; subst.
+      - apply mod_app_base_inv in eq; symmetry in H1; apply mod_app_base_inv in H1; destruct eq; destruct H1; subst; cbn.
+        rewrite mod_base_app. eq_bool. rewrite mod_base_app. reflexivity.
+      - symmetry in H1; apply mod_app_base_inv in H1;destruct H1; subst.
+        rewrite mod_base_app in neq. cbn. rewrite (neq_to_eqb m1' base neq). reflexivity.
+      - destruct m1'; cbn in eq.
+        -- rewrite <- eq in H1. apply mod_app_id_inv in H1; subst. clear e.
+           cbn. eq_bool. reflexivity.
+        -- inversion eq; subst.
+           destruct m2'.
+           rewrite mod_app_base in H1; assert (mod_app m (cons m1' p) = m) as H2 by (cbn; exact H1);
+             symmetry in H2; apply mod_app_id_inv in H2; inversion H2.
+           cbn in H1; inversion H1; subst.
+           apply mod_app_front in H2; subst. cbn; eq_bool. reflexivity.
+      - destruct m2'.
+        -- rewrite mod_app_base in H1.
+           cbn. eq_bool; subst. rewrite mod_app_base in neq; exfalso; apply neq; reflexivity.
+           destruct (change_prefix (mod_app (cons m2 p) m1') m2 (mod_app (cons m2 p) m3')) eqn:eq; [| reflexivity].
+           pose proof (only_prefixes_changable _ _ _ _ eq) as pfx.
+           exfalso. clear eq m neq e0 neq0 e m3' IHm2.
+           assert (mod_app (cons m2 p) m1' = mod_app m2 (mod_app p m1')) as eq 
+               by (rewrite <- mod_app_assoc; reflexivity).
+           rewrite eq in pfx.
+           apply Prefix_modapp_inv in pfx. clear eq.
+           destruct m1'. cbn in pfx; discriminate pfx. cbn in pfx; discriminate pfx.
+        -- cbn in H1; inversion H1; subst.
+           rewrite (IHm2 (mod_app m m1') (mod_app m m3') m m1' m2' m3' ltac:(reflexivity) ltac:(reflexivity) ltac:(reflexivity)).
+           cbn; eq_bool; subst.
+           --- cbn in neq. destruct (neq eq_refl).
+           --- destruct (change_prefix m1' m2' m3') eqn:eq; reflexivity.
+    Qed.
+    
 End Modality.

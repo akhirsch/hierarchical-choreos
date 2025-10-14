@@ -117,6 +117,122 @@ Section CorpsSyntax.
 
   End CorpsTerms.
 
+  Section LiftSeen.
+    Fixpoint liftseen (e : expr) (k n : nat) : expr :=
+      match e with
+      | var x => var x
+      | uu => uu
+      | atE p e => atE p (liftseen e k n)
+      | letAt p e1 e2 => letAt p (liftseen e1 k n) (liftseen e2 (S k) n)
+      | pair e1 e2 => pair (liftseen e1 k n) (liftseen e2 k n)
+      | pi1 e => pi1 (liftseen e k n)
+      | pi2 e => pi2 (liftseen e k n)
+      | inl e => inl (liftseen e k n)
+      | inr e => inr (liftseen e k n)
+      | caseE e1 e2 e3 => caseE (liftseen e1 k n) (liftseen e2 (S k) n) (liftseen e3 (S k) n)
+      | efql e => efql (liftseen e k n)
+      | lam t e => lam t (liftseen e (S k) n)
+      | appE e1 e2 => appE (liftseen e1 k n) (liftseen e2 k n)
+      | send e seen m p q =>
+          if PeanoNat.Nat.ltb seen k
+          then send (liftseen e k n) seen m p q
+          else send (liftseen e k n) (n + seen) m p q
+      | up e seen m p =>
+          if PeanoNat.Nat.ltb seen k
+          then up (liftseen e k n) seen m p
+          else up (liftseen e k n) (n + seen) m p
+      | down e seen m p =>
+          if PeanoNat.Nat.ltb seen k
+          then down (liftseen e k n) seen m p
+          else down (liftseen e k n) (n + seen) m p
+      end.
+
+
+    Fixpoint lowerseen (e : expr) (k n : nat) : expr :=
+      match e with
+      | var x => var x
+      | uu => uu
+      | atE p e => atE p (lowerseen e k n)
+      | letAt p e1 e2 => letAt p (lowerseen e1 k n) (lowerseen e2 (S k) n)
+      | pair e1 e2 => pair (lowerseen e1 k n) (lowerseen e2 k n)
+      | pi1 e => pi1 (lowerseen e k n)
+      | pi2 e => pi2 (lowerseen e k n)
+      | inl e => inl (lowerseen e k n)
+      | inr e => inr (lowerseen e k n)
+      | caseE e1 e2 e3 => caseE (lowerseen e1 k n) (lowerseen e2 (S k) n) (lowerseen e3 (S k) n)
+      | efql e => efql (lowerseen e k n)
+      | lam t e => lam t (lowerseen e (S k) n)
+      | appE e1 e2 => appE (lowerseen e1 k n) (lowerseen e2 k n)
+      | send e seen m p q =>
+          if PeanoNat.Nat.ltb seen k
+          then send (lowerseen e k n) seen m p q
+          else send (lowerseen e k n) (seen - n) m p q
+      | up e seen m p =>
+          if PeanoNat.Nat.ltb seen k
+          then up (lowerseen e k n) seen m p
+          else up (lowerseen e k n) (seen - n) m p
+      | down e seen m p =>
+          if PeanoNat.Nat.ltb seen k
+          then down (lowerseen e k n) seen m p
+          else down (lowerseen e k n) (seen - n) m p
+      end.
+
+    Lemma liftseen_fusion : forall e k n1 n2, liftseen (liftseen e k n1) k n2 = liftseen e k (n1 + n2).
+    Proof using.
+      intro e; induction e; intros k n1 n2; destruct k; cbn;
+        repeat match goal with
+          | [ |- ?a = ?a ] => reflexivity
+          | [ IH : forall k n1 n2, liftseen (liftseen ?e k n1) k n2 = liftseen ?e k (n1 + n2) |- context [liftseen (liftseen ?e ?k ?n1) ?k ?n2]] =>
+              rewrite (IH k n1 n2)
+          | [ |- ?f ?a ?x ?b ?c ?d = ?f ?a ?y ?b ?c ?d ] => f_equal; try lia
+          | [ |- ?f ?a ?x ?b ?c = ?f ?a ?y ?b ?c ] => f_equal; try lia
+          | [ |- context[PeanoNat.Nat.leb ?a ?b] ] => destruct (PeanoNat.Nat.leb_spec a b); cbn
+          end.
+    Qed.
+
+    (* Lemma lowerseen_fusion : forall e k n1 n2, lowerseen (lowerseen e k n1) k n2 = lowerseen e k (n1 + n2). *)
+    (* Proof using. *)
+    (*   intro e; induction e; intros k n1 n2; destruct k; cbn; *)
+    (*     repeat match goal with *)
+    (*       | [ |- ?a = ?a ] => reflexivity *)
+    (*       | [ IH : forall k n1 n2, lowerseen (lowerseen ?e k n1) k n2 = lowerseen ?e k (n1 + n2) |- context [lowerseen (lowerseen ?e ?k ?n1) ?k ?n2]] => *)
+    (*           rewrite (IH k n1 n2) *)
+    (*       | [ |- ?f ?a ?x ?b ?c ?d = ?f ?a ?y ?b ?c ?d ] => f_equal; try lia *)
+    (*       | [ |- ?f ?a ?x ?b ?c = ?f ?a ?y ?b ?c ] => f_equal; try lia *)
+    (*       | [ |- context[PeanoNat.Nat.leb ?a ?b] ] => destruct (PeanoNat.Nat.leb_spec a b); cbn *)
+    (*       end. *)
+      
+      
+    (* Qed. *)
+
+    (* Lemma liftseen_lowerseen_fusion : forall e n1 n2, *)
+    (*     lowerseen (liftseen e n1) n2 = *)
+    (*       if PeanoNat.Nat.leb n1 n2 *)
+    (*       then lowerseen e (n2 - n1) *)
+    (*       else liftseen e (n1 - n2). *)
+    (* Proof using. *)
+    (*   intro e; induction e; intros n1 n2; cbn; *)
+    (*     repeat match goal with *)
+    (*       | [ |- ?a = ?a ] => reflexivity *)
+    (*       | [ |- context[PeanoNat.Nat.leb ?a ?b]] => *)
+    (*           let H := fresh in *)
+    (*           let eq := fresh "eq" in *)
+    (*           destruct (PeanoNat.Nat.leb a b) eqn:eq; *)
+    (*           pose proof (PeanoNat.Nat.leb_spec a b) as H; *)
+    (*           rewrite eq in H; *)
+    (*           inversion H; subst; clear H *)
+    (*       | [ IH : forall n1 n2, lowerseen (liftseen ?e n1) n2 = *)
+    (*                           if PeanoNat.Nat.leb n1 n2 then lowerseen ?e (n2 - n1) else liftseen ?e (n1 - n2), *)
+    (*             H : PeanoNat.Nat.leb ?n1 ?n2 = ?b |- context [lowerseen (liftseen ?e ?n1) ?n2]] => *)
+    (*           let H' := fresh in *)
+    (*           pose proof (IH n1 n2) as H'; *)
+    (*           rewrite H in H'; cbn in H'; rewrite H' *)
+    (*       end. *)
+    (*   all: f_equal; lia. *)
+    (* Qed. *)
+
+  End LiftSeen.
+
   Section Renaming.
 
     Definition renaming : Type := nat -> nat.
@@ -176,6 +292,59 @@ Section CorpsSyntax.
       | down e seen m p => down (ren e ξ) seen m p
       end.
     
+    Fixpoint renseen (e : expr) (ξ : renaming) : expr :=
+      match e with
+      | var x => var x
+      | uu => uu
+      | atE p e => atE p (renseen e ξ)
+      | letAt p e1 e2 => letAt p (renseen e1 ξ) (renseen e2 (renup ξ))
+      | pair e1 e2 => pair (renseen e1 ξ) (renseen e2 ξ)
+      | pi1 e => pi1 (renseen e ξ)
+      | pi2 e => pi2 (renseen e ξ)
+      | inl e => inl (renseen e ξ)
+      | inr e => inr (renseen e ξ)
+      | caseE e1 e2 e3 => caseE (renseen e1 ξ) (renseen e2 (renup ξ)) (renseen e3 (renup ξ))
+      | efql e => efql (renseen e ξ)
+      | lam t e => lam t (renseen e (renup ξ))
+      | appE e1 e2 => appE (renseen e1 ξ) (renseen e2 ξ)
+      | send e seen m p q => send (renseen e ξ) (ξ seen) m p q
+      | up e seen m p => up (renseen e ξ) (ξ seen) m p
+      | down e seen m p => down (renseen e ξ) (ξ seen) m p
+      end.
+
+    Lemma renseen_ext : forall ξ1 ξ2,
+        (forall n, ξ1 n = ξ2 n) ->
+        forall e, renseen e ξ1 = renseen e ξ2.
+    Proof using.
+      intros ξ1 ξ2 ext_eq e; revert ξ1 ξ2 ext_eq; induction e; intros ξ1 ξ2 ext_eq; cbn;
+        repeat match goal with
+          | [ |- ?a = ?a ] => reflexivity
+          | [ H : forall n, ?f n = ?g n |- context [?f ?n]] => rewrite (H n)
+          | [ IH : forall ξ1 ξ2, (forall n, ξ1 n = ξ2 n) -> renseen ?e ξ1 = renseen ?e ξ2,
+                H : forall n, ?ξ1 n = ?ξ2 n |- context[renseen ?e ?ξ1]] => rewrite (IH ξ1 ξ2 H)
+          | [H : forall n, ?f n = ?g n |- context[renup ?f]] =>
+              pose proof (renup_ext f g H)
+          end.
+    Qed.
+
+    Lemma liftseen_renseen : forall e k n, liftseen e k n = renseen e (fun x => if PeanoNat.Nat.ltb x k then x else x + n).
+    Proof using.
+      intro e; induction e; intros k n1; cbn; try reflexivity;
+        repeat match goal with
+          | [ |- ?a = ?a ] => reflexivity
+          | [ IH : forall k n, liftseen ?e k n = renseen ?e (fun x => if PeanoNat.Nat.ltb x k then x else x + n) |- context[liftseen ?e ?k ?n]] =>
+              rewrite (IH k n)
+          end; try reflexivity.
+      1-3: f_equal.
+      1-4: apply renseen_ext; intro n; cbn;
+      destruct (PeanoNat.Nat.leb_spec n k); cbn;
+      [unfold renup; destruct n; cbn; auto;
+       destruct k; [inversion H0|]; destruct (PeanoNat.Nat.leb_spec n k); [reflexivity | lia]|];
+      unfold renup; destruct n; cbn; [inversion H0|]; destruct k; [reflexivity|];
+      destruct (PeanoNat.Nat.leb_spec n k); [lia | reflexivity].
+      all: destruct k; cbn; [f_equal; lia | destruct (PeanoNat.Nat.leb_spec seen k); cbn; f_equal; lia].
+    Qed.        
+    
     Lemma ren_ext : forall (ξ1 ξ2 : renaming),
         (forall n, ξ1 n = ξ2 n) ->
         forall e, ren e ξ1 = ren e ξ2.
@@ -192,7 +361,6 @@ Section CorpsSyntax.
           end.
     Qed.
 
-
     Lemma ren_id : forall e, ren e id_renaming = e.
     Proof using.
       intro e; induction e; cbn;
@@ -206,7 +374,21 @@ Section CorpsSyntax.
           end.
     Qed.
 
+    Lemma renseen_id : forall e, renseen e id_renaming = e.
+    Proof using.
+      intro e; induction e; cbn;
+        repeat match goal with
+          | [ |- ?a = ?a ] => reflexivity
+          | [ |- context[id_renaming _]] => unfold id_renaming; cbn
+          | [ IH : renseen ?e id_renaming = ?e |- context[renseen ?e id_renaming]] => rewrite IH
+          | [ IH : renseen ?e id_renaming = ?e |- context[renseen ?e (fun x => x)]] => unfold id_renaming in IH; rewrite IH
+          | [|- context[renseen ?e (renup id_renaming)]] =>
+              rewrite (renseen_ext (renup id_renaming) id_renaming renup_id e)
+          end.
+    Qed.
+
     Lemma ren_fusion : forall e ξ1 ξ2, ren (ren e ξ1) ξ2 = ren e (fun n => ξ2 (ξ1 n)).
+    Proof using.
       intro e; induction e; intros ξ1 ξ2; cbn;
         repeat match goal with
           | [ |- ?a = ?a ] => reflexivity
@@ -218,6 +400,42 @@ Section CorpsSyntax.
                          (renup_fusion f g) e)
           end.
     Qed.
+
+    Lemma renseen_fusion : forall e ξ1 ξ2, renseen (renseen e ξ1) ξ2 = renseen e (fun n => ξ2 (ξ1 n)).
+    Proof using.
+      intro e; induction e; intros ξ1 ξ; cbn;
+        repeat match goal with
+          | [ |- ?a = ?a ] => reflexivity
+          | [ IH : forall ξ1 ξ2, renseen (renseen ?e ξ1) ξ2 = renseen ?e (fun n => ξ2 (ξ1 n))
+                            |-  context[renseen (renseen ?e ?f) ?g]] =>
+              rewrite (IH f g)
+          | [ |- context[renseen ?e (fun n => renup ?g (renup ?f n))]] =>
+              rewrite (renseen_ext (fun n => renup g (renup f n)) (renup (fun n => g (f n)))
+                         (renup_fusion f g) e)
+          end.
+    Qed.
+
+    Lemma ren_renseen : forall e ξ1 ξ2, renseen (ren e ξ1) ξ2 = ren (renseen e ξ2) ξ1.
+    Proof using.
+      intro e; induction e; intros ξ1 ξ2; cbn;
+        repeat match goal with
+          | [|- ?a = ?a ] => reflexivity
+          | [ IH : forall ξ1 ξ2, renseen (ren ?e ξ1) ξ2 = ren (renseen ?e ξ2) ξ1 |- context[renseen (ren ?e ?ξ1) ?ξ2]] =>
+              rewrite (IH ξ1 ξ2)
+          end.
+    Qed.      
+
+    Lemma ren_liftseen : forall e k n ξ, liftseen (ren e ξ) k n = ren (liftseen e k n) ξ.
+    Proof using.
+      intro e; induction e; intros k n1 ξ; destruct k; cbn;
+        repeat match goal with
+          | [ |- ?a = ?a ] => reflexivity
+          | [ IH : forall k n ξ, liftseen (ren ?e ξ) k n = ren (liftseen ?e k n) ξ |- context[liftseen (ren ?e ?ξ) ?k ?n]] =>
+              rewrite (IH k n ξ)
+          | [ |-context[PeanoNat.Nat.leb ?a ?b]] => destruct (PeanoNat.Nat.leb_spec a b); cbn
+          end.
+    Qed.
+
   End Renaming.
 
   Section Substitution.
@@ -229,7 +447,7 @@ Section CorpsSyntax.
       fun n =>
         match n with
         | 0 => var 0
-        | S n => ren (σ n) S
+        | S n => renseen (ren (σ n) S) S
         end.
 
     Lemma substup_ext : forall σ1 σ2,
@@ -261,7 +479,7 @@ Section CorpsSyntax.
         (fun n => ren (substup σ n) (renup ξ)) n = (substup (fun n => ren (σ n) ξ)) n.
     Proof using.
       intros σ ξ n; destruct n; cbn; [reflexivity|].
-      repeat rewrite ren_fusion; unfold renup; reflexivity.
+      repeat rewrite ren_renseen; repeat rewrite ren_fusion; unfold renup; reflexivity.
     Qed.
 
     Lemma substup_id_below : forall σ n,
@@ -273,13 +491,78 @@ Section CorpsSyntax.
       lia.
     Qed.
 
-    Definition option_bind {A B : Type} (x : option A) (f : A -> option B) : option B :=
-      match x with
-      | Some a => f a
-      | None => None
-      end.
+    Definition substup_many (x : nat) (σ : substitution) : substitution :=
+      fun n =>
+        if PeanoNat.Nat.ltb n x
+        then var n
+        else  renseen (ren (σ (n - x)) (fun y => y + x)) (fun y => y + x).
 
-    #[local] Notation "x >>= f" := (option_bind x f) (at level 10).
+    Lemma substup_many_ext : forall x σ1 σ2,
+        (forall n, σ1 n = σ2 n) ->
+        forall n, substup_many x σ1 n = substup_many x σ2 n.
+    Proof using.
+      intros x σ1 σ2 ext_eq n; unfold substup_many; destruct (PeanoNat.Nat.ltb_spec n x); [|rewrite ext_eq]; reflexivity.
+    Qed.
+
+    Lemma id_substup_many : forall (x n : nat), substup_many x id_substitution n = id_substitution n.
+    Proof using.
+      intros x n; unfold substup_many; destruct (PeanoNat.Nat.ltb_spec n x); [reflexivity|cbn].
+      assert (n - x + x = n) as eq by lia; rewrite eq; reflexivity.
+    Qed.
+
+    Lemma substup_many_id_below : forall x σ n,
+        (forall m, m < n -> σ m = var m) ->
+        (forall m, m < x + n -> substup_many x σ m = var m).
+    Proof using.
+      intros x σ n id_below m m_lt_x_n; unfold substup_many.
+      destruct (PeanoNat.Nat.ltb_spec m x). reflexivity.
+      rewrite id_below; [cbn|lia].
+      assert (m - x + x = m) as eq by lia; rewrite eq; reflexivity.
+    Qed.
+
+    Fixpoint do_times {A : Type} (x : nat) (f : A -> A) : A -> A :=
+      fun a => match x with
+            | 0 => a
+            | S x => f (do_times x f a)
+            end.
+
+    Lemma substup_many_S : forall x σ n, substup_many (S x) σ n = substup (substup_many x σ) n.
+    Proof using.
+      intros x σ n; unfold substup_many; destruct (PeanoNat.Nat.ltb_spec n x) as [n_lt_x | x_le_n].
+      - assert (PeanoNat.Nat.ltb n (S x) = true) as eq by (apply PeanoNat.Nat.ltb_lt; apply PeanoNat.Nat.lt_lt_succ_r; auto);
+          rewrite eq; clear eq.
+        destruct n; cbn; auto. destruct x; [inversion n_lt_x|].
+        assert (PeanoNat.Nat.leb n x = true) as eq
+            by (apply PeanoNat.Nat.leb_le; apply PeanoNat.Nat.lt_le_incl; apply PeanoNat.lt_S_n; exact n_lt_x);
+          rewrite eq; clear eq; reflexivity.
+      - destruct n; cbn; [reflexivity|].
+        destruct x; cbn.
+        -- rewrite PeanoNat.Nat.sub_0_r.
+           symmetry; rewrite ren_renseen. rewrite renseen_fusion.
+           rewrite <- ren_renseen. rewrite ren_fusion.
+           rewrite ren_ext with (ξ2 := fun y => y + 1); [| lia].
+           rewrite renseen_ext with (ξ2 := fun y => y + 1); [reflexivity|lia].
+        -- destruct (Compare_dec.le_lt_eq_dec _ _ x_le_n) as [x_lt_n | x_eq_n];
+             [apply PeanoNat.lt_S_n in x_lt_n|].
+           2: inversion x_eq_n; subst; rewrite PeanoNat.Nat.leb_refl; reflexivity.
+           apply Arith_base.lt_not_le_stt in x_lt_n.
+           destruct (PeanoNat.Nat.leb_spec n x) as [n_le_x | _ ]; [destruct (x_lt_n n_le_x)|].
+           symmetry. rewrite ren_renseen. rewrite renseen_fusion. rewrite <- ren_renseen. rewrite ren_fusion.
+           rewrite ren_ext with (ξ2 := fun y => y + S (S x)); [| lia].
+           rewrite renseen_ext with (ξ2 := fun y => y + S (S x)); [reflexivity|lia].
+    Qed.
+
+    Lemma substup_many_spec : forall x σ n, substup_many x σ n = do_times x substup σ n.
+    Proof using.
+      intros x; induction x; intros σ n; cbn.
+      - rewrite PeanoNat.Nat.sub_0_r.
+        rewrite renseen_ext with (ξ2 := fun y => y); [rewrite renseen_id | lia].
+        rewrite ren_ext with (ξ2 := fun y => y); [rewrite ren_id | lia].
+        reflexivity.
+      - rewrite substup_many_S.
+        apply substup_ext. apply IHx.
+    Qed.           
+           
 
     Fixpoint subst (e : expr) (σ : substitution) : expr :=
       match e with
@@ -377,13 +660,42 @@ Section CorpsSyntax.
                          (renup_substup_fusion σ ξ) e)
           end.
     Qed.
+      
+    
+    Lemma renseen_substup : forall σ ξ n, renseen (substup σ n) (renup ξ) = substup (fun x => renseen (σ x) ξ) n.
+    Proof using.
+      intros σ ξ n. destruct n; cbn. reflexivity.
+      repeat rewrite ren_renseen; f_equal.
+      repeat rewrite renseen_fusion. unfold renup. reflexivity.
+    Qed.
 
+    Lemma subst_renseen : forall e σ ξ,
+        renseen (subst e σ) ξ = subst (renseen e ξ) (fun n => renseen (σ n) ξ).
+    Proof using.
+      intros e; induction e; intros σ ξ; cbn;
+        repeat match goal with
+          | [|- ?a = ?a ] => reflexivity
+          | [ IH : forall σ ξ, renseen (subst ?e σ) ξ = subst (renseen ?e ξ) (fun n => renseen (σ n) ξ) |- context[renseen (subst ?e ?σ) ?ξ]] =>
+              rewrite (IH σ ξ)
+          end.
+      all: f_equal; apply subst_ext;  apply renseen_substup.
+    Qed.
+
+    Lemma subst_liftseen : forall e σ k n,
+        liftseen (subst e σ) k n = subst (liftseen e k n) (fun x => liftseen (σ x) k n).
+    Proof using.
+      intros e σ k n. repeat rewrite liftseen_renseen. rewrite subst_renseen.
+      apply subst_ext. intro x. rewrite liftseen_renseen. reflexivity.
+    Qed.             
+      
     Lemma substup_fusion : forall σ1 σ2 n,
         (fun n => subst (substup σ1 n) (substup σ2)) n = (substup (fun n => subst (σ1 n) σ2)) n.
     Proof using.
       intros σ1 σ2 n; destruct n; cbn; [reflexivity|].
-      rewrite ren_subst_fusion; rewrite subst_ren_fusion.
-      unfold substup; reflexivity.
+      symmetry. rewrite ren_renseen. rewrite subst_renseen.
+      rewrite subst_ren_fusion.
+      rewrite ren_renseen. rewrite ren_subst_fusion. apply subst_ext.
+      intro m. unfold substup. rewrite ren_renseen. reflexivity.
     Qed.
 
     Theorem subst_fusion : forall e σ1 σ2,
@@ -593,13 +905,35 @@ Section CorpsSyntax.
         try (econstructor; eauto; fail).
     Qed.
 
+    Lemma closed_above_renseen : forall e ξ k,
+        closed_above (renseen e ξ) k <-> closed_above e k.
+    Proof using.
+      intro e; induction e; intros ξ k; cbn; try reflexivity; split; intro H0; try (inversion H0; subst; constructor;
+      repeat match goal with
+             | [ IH : forall ξ k, closed_above (renseen ?e ξ) k <-> closed_above ?e k,
+                   H : closed_above (renseen ?e ?ξ) ?k |- closed_above ?e ?k] =>
+                 eapply IH; exact H
+        | [ IH : forall ξ k, closed_above (renseen ?e ξ) k <-> closed_above ?e k,
+                   H : closed_above ?e ?k |- closed_above (renseen ?e ?ξ) ?k] =>
+                 eapply IH; exact H
+                                  
+        end; fail).
+    Qed.
+    
+    Lemma closed_above_liftseen : forall e n m k,
+        closed_above (liftseen e m n) k <-> closed_above e k.
+    Proof using.
+      intros e n m k.
+      rewrite liftseen_renseen. apply closed_above_renseen.
+    Qed.
+
     Lemma substup_closed_above : forall σ n k,
         (forall m, m < n -> closed_above (σ m) k) ->
         forall m, m < S n -> closed_above (substup σ m) (S k).
     Proof using.
       intros σ n k clsd_abv m m_lt_Sn; destruct m; cbn.
       * constructor; apply PeanoNat.Nat.lt_0_succ.
-      * apply ren_closed_above with (n := k). apply clsd_abv.
+      * apply closed_above_renseen; apply ren_closed_above with (n := k). apply clsd_abv.
         all: intros; lia.
     Qed.
 
