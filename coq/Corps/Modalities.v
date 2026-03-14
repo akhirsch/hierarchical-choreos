@@ -121,6 +121,31 @@ Section Modality.
     intros p q H0; unfold proc_to_mod in H0; inversion H0; reflexivity.
   Qed.
 
+  Lemma mod_app_inj : forall {m1 m2 m3 : mod},
+      mod_app m1 m2 = mod_app m1 m3 -> m2 = m3.
+  Proof using.
+    intros m1 m2; revert m1; induction m2; intros m1 m3 eq; destruct m3; cbn in *;
+      repeat match goal with
+        | [ |- ?a = ?a ] => reflexivity
+        | [ H : ?m1 = cons (mod_app ?m1 _) _ |- _ ] =>
+            let H' := fresh in
+            pose (H' := f_equal mod_size eq); cbn in H'; rewrite mod_app_size in H'; lia
+        | [ H : cons (mod_app ?m1 _) _ = ?m1 |- _ ] =>
+            let H' := fresh in
+            pose (H' := f_equal mod_size eq); cbn in H'; rewrite mod_app_size in H'; lia
+        | [ H : cons _ _ = cons _ _ |- _ ] =>
+            inversion H; subst; clear H
+        | [ IH : forall m1 m3, mod_app m1 ?m2 = mod_app m1 m3 -> ?m2 = m3, H: mod_app ?m1 ?m2 = mod_app ?m1 ?m3 |- _ ] =>
+            tryif unify m2 m3
+            then fail
+            else lazymatch goal with
+                 | [ _ : m2 = m3 |- _ ] => fail
+                 | _ =>
+                     pose proof (IH m1 m3 H); subst 
+                 end
+        end.
+  Qed.
+
   #[global] Coercion proc_to_mod : PName >-> mod.
 
   Lemma mod_app_first_inj : forall (p q : PName) (m1 m2 : mod),
@@ -266,7 +291,6 @@ Section Modality.
   Proof using.
     intros m1 m2 m3; split; intro H0; [apply extract_suffix_spec1; auto | rewrite H0; apply extract_suffix_spec2].
   Qed.
-
   
   Inductive PrefixOf : mod -> mod -> Prop :=
   | PO_refl (m : mod) : PrefixOf m m
@@ -275,9 +299,15 @@ Section Modality.
 
   #[global] Instance PrefixOfRefl : Reflexive PrefixOf := PO_refl.
 
-  Lemma PrefixOf_base : forall m, PrefixOf base m.
+  Fixpoint base_Prefix (m : mod) : PrefixOf base m :=
+    match m with
+    | base => PO_refl base
+    | cons m p => PO_step (base_Prefix m) p
+    end.
+
+  Lemma PrefixOf_base : forall m, PrefixOf m base -> m = base.
   Proof using.
-    intro m; induction m; constructor; auto.
+    intro m; destruct m; intro pfx; [reflexivity | inversion pfx].
   Qed.
 
   Lemma PrefixOf_app : forall m1 m2, PrefixOf m1 (mod_app m1 m2).
@@ -314,7 +344,7 @@ Section Modality.
 
   #[global] Instance PrefixOfTrans : Transitive PrefixOf := @PrefixOf_trans.
 
-  Lemma PrefixOf_size : forall m1 m2, PrefixOf m1 m2 -> mod_size m1 <= mod_size m2.
+  Lemma PrefixOf_size : forall {m1 m2}, PrefixOf m1 m2 -> mod_size m1 <= mod_size m2.
   Proof using.
     intros m1 m2 pfx; induction pfx; cbn; lia.
   Qed.
@@ -323,6 +353,18 @@ Section Modality.
   Proof using.
     intros m1 m2 m3 pfx; revert m3; induction pfx; intro m3; [reflexivity|].
     cbn; apply PO_step; apply IHpfx.
+  Qed.
+
+  Lemma extended_suffix_prefix : forall {m1 m2 m3 : mod},
+      PrefixOf m1 (mod_app m2 m3) ->
+      ~ PrefixOf m1 m2 ->
+      PrefixOf m2 m1.
+  Proof using.
+    intros m1 m2 m3; revert m1 m2; induction m3; cbn; intros m1 m2 pfx npfx.
+    - exfalso; apply npfx; apply pfx.
+    - inversion pfx; subst.
+      -- apply PO_step; apply PrefixOf_app.
+      -- apply IHm3; auto.
   Qed.
 
   Lemma extract_suffix_prefix : forall m1 m2 m3, extract_suffix m1 m2 = Some m3 -> PrefixOf m1 m2.
@@ -353,17 +395,28 @@ Section Modality.
     intro m; destruct m; cbn; eq_bool; reflexivity.
   Qed.
 
-  Lemma PrefixOf_prefixb : forall m1 m2, PrefixOf m1 m2 -> prefixb m1 m2 = true.
+  Lemma PrefixOf_prefixb : forall {m1 m2}, PrefixOf m1 m2 -> prefixb m1 m2 = true.
   Proof using.
     intros m1 m2 pfx; induction pfx; [apply prefixb_refl|].
     cbn; eq_bool; subst; [reflexivity| assumption].
   Qed.
 
-  Lemma prefixb_PrefixOf : forall m1 m2, prefixb m1 m2 = true -> PrefixOf m1 m2.
+  Lemma prefixb_PrefixOf : forall {m1 m2}, prefixb m1 m2 = true -> PrefixOf m1 m2.
   Proof using.
     intros m1 m2; revert m1; induction m2 as [| m2' IHm2' p]; intros m1 eq; cbn in eq;
       eq_bool; subst; try (constructor; auto; fail).
     inversion eq.
+  Qed.
+
+  Theorem prefixb_not_PrefixOf : forall {m1 m2}, prefixb m1 m2 = false -> ~ (PrefixOf m1 m2).
+  Proof using.
+    intros m1 m2 H0 H1; apply PrefixOf_prefixb in H1; rewrite H1 in H0; inversion H0.
+  Qed.
+
+  Theorem not_PrefixOf_prefixb : forall {m1 m2}, ~ (PrefixOf m1 m2) -> prefixb m1 m2 = false.
+  Proof using.
+    intros m1 m2 H0; destruct (prefixb m1 m2) eqn:H1; [| reflexivity].
+    exfalso; apply prefixb_PrefixOf in H1; exact (H0 H1).
   Qed.
 
   Theorem PrefixOf_dec : forall m1 m2, {PrefixOf m1 m2} + {~ PrefixOf m1 m2}.
@@ -380,11 +433,6 @@ Section Modality.
     - cbn; constructor; apply IHpf.
   Qed.
 
-  Fixpoint base_Prefix (m : mod) : PrefixOf base m :=
-    match m with
-    | base => PO_refl base
-    | cons m p => PO_step (base_Prefix m) p
-    end.
 
   Fixpoint remove_Prefix (m1 m2 : mod) : option mod :=
     if eqb m1 m2
@@ -398,7 +446,7 @@ Section Modality.
              end
          end.
 
-  Lemma readd_remove_prefix : forall m1 m2 m3, remove_Prefix m1 m2 = Some m3 -> mod_app m1 m3 = m2.
+  Lemma readd_remove_prefix : forall {m1 m2 m3}, remove_Prefix m1 m2 = Some m3 -> mod_app m1 m3 = m2.
   Proof using.
     intros m1 m2; revert m1; induction m2; intros m1 m3 eq; cbn in *;
       eq_bool; subst; try (inversion eq; subst); cbn; try reflexivity.
@@ -412,7 +460,15 @@ Section Modality.
     intro m; destruct m; cbn; eq_bool; reflexivity.
   Qed.
 
-  Lemma prefix_remove_Some : forall m1 m2, PrefixOf m1 m2 -> exists m, remove_Prefix m1 m2 = Some m.
+  Lemma remove_app : forall m1 m2, remove_Prefix m1 (mod_app m1 m2) = Some m2.
+  Proof using.
+    intros m1 m2; induction m2; cbn.
+    apply remove_all_mod.
+    eq_bool; subst. pose proof (f_equal mod_size eq); cbn in H0. rewrite mod_app_size in H0. lia.
+    rewrite IHm2. reflexivity.
+  Qed.
+
+  Lemma prefix_remove_Some : forall {m1 m2}, PrefixOf m1 m2 -> exists m, remove_Prefix m1 m2 = Some m.
   Proof using.
     intros m1 m2 pfx; induction pfx; cbn.
     - exists base; apply remove_all_mod.
@@ -421,7 +477,7 @@ Section Modality.
       exists (cons m p); rewrite IHpfx; reflexivity.
   Qed.
 
-  Lemma remove_Some_prefix : forall m1 m2 m3, remove_Prefix m1 m2 = Some m3 -> PrefixOf m1 m2.
+  Lemma remove_Some_prefix : forall {m1 m2 m3}, remove_Prefix m1 m2 = Some m3 -> PrefixOf m1 m2.
   Proof using.
     intros m1 m2; revert m1; induction m2; intros m1 m3 eq; cbn in eq;
       eq_bool; subst; try (econstructor; eauto; fail).
@@ -522,7 +578,7 @@ Section Modality.
     apply IHn in H1; auto.
   Qed.
 
-  Lemma Prefix_modapp_inv : forall m1 m2, PrefixOf (mod_app m1 m2) m1 -> m2 = base.
+  Lemma Prefix_modapp_inv : forall {m1 m2}, PrefixOf (mod_app m1 m2) m1 -> m2 = base.
   Proof using.
     intro m1; induction m1; intros m2 pfx.
     - rewrite mod_base_app in pfx; inversion pfx; subst; reflexivity.
@@ -538,7 +594,7 @@ Section Modality.
          exfalso; induction m2; cbn in pf; inversion pf.
   Qed.           
   
-  Lemma PrefixT_modapp_inv : forall m1 m2, PrefixOfT (mod_app m1 m2) m1 -> m2 = base.
+  Lemma PrefixT_modapp_inv : forall {m1 m2}, PrefixOfT (mod_app m1 m2) m1 -> m2 = base.
   Proof using.
     intro m1; induction m1; intros m2 pfx.
     - rewrite mod_base_app in pfx; inversion pfx; subst; reflexivity.
@@ -554,7 +610,7 @@ Section Modality.
          exfalso; induction m2; cbn in pfx0; inversion pfx0.
   Qed.           
   
-  Lemma PrefixT_cons_inv : forall m p, PrefixOfT (cons m p) m -> False.
+  Lemma PrefixT_cons_inv : forall {m p}, PrefixOfT (cons m p) m -> False.
   Proof using.
     intros m p.
     assert (cons m p = mod_app m (cons base p)) as eq by reflexivity; rewrite eq; intro pfx.
@@ -562,7 +618,7 @@ Section Modality.
     inversion pfx.
   Qed.
 
-  Lemma remove_PrefixT_ext : forall (m1 m2 : mod) (pfx1 pfx2 : PrefixOfT m1 m2),
+  Lemma remove_PrefixT_ext : forall {m1 m2 : mod} (pfx1 pfx2 : PrefixOfT m1 m2),
       remove_PrefixT pfx1 = remove_PrefixT pfx2.
   Proof using.
     intros m1 m2; revert m1; induction m2; intros m1 pfx1 pfx2.
@@ -580,7 +636,7 @@ Section Modality.
     | cons m2 p => POT_step p (PrefixT_peel m1 m2)
     end.
   
-  Lemma remove_PrefixT_app : forall (m1 m2 : mod) (pfx : PrefixOfT m1 (mod_app m1 m2)),
+  Lemma remove_PrefixT_app : forall {m1 m2 : mod} (pfx : PrefixOfT m1 (mod_app m1 m2)),
       remove_PrefixT pfx = m2.
   Proof using.
     intros m1 m2 pfx.
@@ -589,7 +645,7 @@ Section Modality.
     rewrite IHm2; reflexivity.
   Qed.
   
-  Definition remove_Prefix' : forall (m1 m2 : mod) (pfx : PrefixOf m1 m2), mod.
+  Definition remove_Prefix' : forall {m1 m2 : mod} (pfx : PrefixOf m1 m2), mod.
     refine (fix remove_Prefix' m1 m2 pfx :=
               match mod_eq_dec m1 m2 with
               | left _ => base
@@ -782,7 +838,7 @@ Section Modality.
         apply IHm3; auto.
     Qed.
 
-        Fixpoint change_prefix_t {m1 m2 : mod} (pfx1 : PrefixOfT m1 m2) (m3 : mod) : mod :=
+    Fixpoint change_prefix_t {m1 m2 : mod} (pfx1 : PrefixOfT m1 m2) (m3 : mod) : mod :=
       match pfx1 with
       | POT_refl _ => m3
       | POT_step p pfx => cons (change_prefix_t pfx m3) p
@@ -821,7 +877,7 @@ Section Modality.
                end
            end.
 
-    Theorem change_prefix_of_prefix : forall (m1 m2 m3 : mod),
+    Theorem change_prefix_of_prefix : forall {m1 m2 : mod} (m3 : mod),
         PrefixOf m1 m2 ->
         change_prefix m1 m2 m3 <> None.
     Proof using.
@@ -832,20 +888,20 @@ Section Modality.
         exfalso; apply IHm2 with (m1 := m1) (m3 := m3); auto.
     Qed.
 
-    Lemma cons_prefix : forall m1 m2 p, PrefixOf (cons m1 p) m2 -> PrefixOf m1 m2.
+    Lemma cons_prefix : forall {m1 m2 p}, PrefixOf (cons m1 p) m2 -> PrefixOf m1 m2.
     Proof using H PName.
       intros m1 m2 p pfx; dependent induction pfx.
       - apply PO_step; reflexivity.
       - specialize (IHpfx H m1 p eq_refl); apply PO_step; apply IHpfx.
     Qed.
     
-    Lemma extended_suffix_not_prefix : forall m1 m2 p, PrefixOf m1 m2 -> ~ (PrefixOf (cons m2 p) m1).
+    Lemma extended_suffix_not_prefix : forall {m1 m2} p, PrefixOf m1 m2 -> ~ (PrefixOf (cons m2 p) m1).
     Proof using H PName.
       intros m1; induction m1; intros m2 q pfx1 pfx2.
       - inversion pfx2.
       - inversion pfx2; subst.
         apply IHm1 with (m2 := m1) (p := p); [reflexivity | exact pfx1].
-        apply (IHm1 m2 q); [apply cons_prefix with (p := p); exact pfx1 | exact pf].
+        apply (IHm1 m2 q); [apply @cons_prefix with (p := p); exact pfx1 | exact pf].
     Qed.
 
     Theorem change_prefix_of_suffix : forall {m1 m2 : mod} (m3 : mod),
@@ -861,7 +917,7 @@ Section Modality.
       exfalso; apply pfx; reflexivity.
     Qed.      
 
-    Lemma change_prefix_of_prefix' : forall (m1 m2 m2' m3 m4 m4' : mod),
+    Lemma change_prefix_of_prefix' : forall {m1 m2 m2' m3 m4 m4' : mod},
         change_prefix m1 m2 m3 = Some m4 ->
         change_prefix m1 m2' m3 = Some m4' ->
         PrefixOf m2 m2' ->
@@ -879,7 +935,7 @@ Section Modality.
            apply PO_step. apply IHpfx2 with (m1 := m1)(m3 := m3); auto.
     Qed.
 
-    Lemma prefix_of_change_prefix : forall (m1 m2 m3 m4 m5 : mod),
+    Lemma prefix_of_change_prefix : forall {m1 m2 m3 m4 m5 : mod},
         change_prefix m1 m2 m3 = Some m4 ->
         PrefixOf m5 m3 ->
         PrefixOf m5 m4.
@@ -890,7 +946,7 @@ Section Modality.
       apply PO_step; eapply IHm2; eauto.
     Qed.
 
-    Lemma only_prefixes_changable : forall m1 m2 m3 m4,
+    Lemma only_prefixes_changable : forall {m1 m2 m3 m4},
         change_prefix m1 m2 m3 = Some m4 ->
         PrefixOf m1 m2.
     Proof using.
@@ -900,7 +956,36 @@ Section Modality.
       apply PO_step; eapply IHm2; eauto.
     Qed.
 
-    Lemma prefix_changed_to_prefix : forall m1 m2 m3 m4,
+    Lemma change_self : forall {m1 m2 : mod},
+        change_prefix m1 m1 m2 = Some m2.
+    Proof using.
+      intros m1; induction m1; intro m2; cbn; eq_bool; reflexivity.
+    Qed.
+
+    Lemma change_mod_app : forall {m1 m2 m3 : mod},
+        change_prefix m1 (mod_app m1 m2) m3 = Some (mod_app m3 m2).
+    Proof using.
+      intros m1 m2; revert m1; induction m2; intros m1 m3; cbn.
+      - apply change_self.
+      - eq_bool; subst.
+        -- assert (mod_size m1 = mod_size (cons (mod_app m1 m2) p)) as H0
+               by (rewrite eq at 1; reflexivity).
+           cbn in H0; rewrite mod_app_size in H0; lia.
+        -- rewrite IHm2; reflexivity.
+    Qed.
+
+    Lemma change_prefix_to_app : forall {m1 m2 m3 m4 : mod},
+        change_prefix m1 m2 m3 = Some m4 ->
+        exists m5, m2 = mod_app m1 m5 /\ m4 = mod_app m3 m5.
+    Proof using.
+      intros m1 m2 m3 m4 eq.
+      pose proof (only_prefixes_changable eq) as pfx.
+      destruct (PrefixOf_peel pfx) as [m5 eq_m5]; subst.
+      rewrite change_mod_app in eq. inversion eq; subst.
+      exists m5; split; auto.
+    Qed.
+
+    Lemma prefix_changed_to_prefix : forall {m1 m2 m3 m4},
         change_prefix m1 m2 m3 = Some m4 ->
         PrefixOf m3 m4.
     Proof using.
@@ -909,6 +994,7 @@ Section Modality.
       destruct (change_prefix m1 m2 m3) eqn: eq; inversion H1; subst; clear H1.
       apply PO_step; eapply IHm2; eauto.
     Qed.
+
 
   
 End Modality.

@@ -69,9 +69,9 @@ Section CorpsSyntax.
     | efql (e : expr) (* ex falso quod libet; exfalso is taken by coq *)
     | lam (t : type) (e : expr)
     | appE (e1 e2 : expr)
-    | send (e : expr) (seen : nat) (m : mod) (p : PName) (q : PName)
-    | up (e : expr)(seen : nat) (m : mod) (p : PName)
-    | down (e : expr) (seen : nat) (m : mod) (p : PName).
+    | send (e : expr) (m : mod) (p : PName) (q : PName)
+    | up (e : expr) (m : mod) (p : PName)
+    | down (e : expr) (m : mod) (p : PName).
 
     Fixpoint expr_eqb (e1 e2 : expr) : bool :=
       match e1, e2 with
@@ -89,12 +89,12 @@ Section CorpsSyntax.
       | efql e1, efql e2 => expr_eqb e1 e2
       | lam t1 e1, lam t2 e2 => eqb t1 t2 && expr_eqb e1 e2
       | appE e11 e12, appE e21 e22 => expr_eqb e11 e21 && expr_eqb e12 e22
-      | send e1 seen1 m1 p1 q1, send e2 seen2 m2 p2 q2 =>
-          expr_eqb e1 e2 && eqb seen1 seen2 && eqb m1 m2&& eqb p1 p2 && eqb q1 q2
-      | up e1 seen1 m1 p1, up e2 seen2 m2 p2 =>
-          expr_eqb e1 e2 && eqb seen1 seen2 && eqb m1 m2 && eqb p1 p2
-      | down e1 seen1 m1 p1, down e2 seen2 m2 p2 =>
-          expr_eqb e1 e2 && eqb seen1 seen2 && eqb m1 m2 && eqb p1 p2
+      | send e1 m1 p1 q1, send e2 m2 p2 q2 =>
+          expr_eqb e1 e2 && eqb m1 m2&& eqb p1 p2 && eqb q1 q2
+      | up e1 m1 p1, up e2 m2 p2 =>
+          expr_eqb e1 e2 && eqb m1 m2 && eqb p1 p2
+      | down e1 m1 p1, down e2 m2 p2 =>
+          expr_eqb e1 e2 && eqb m1 m2 && eqb p1 p2
       | _, _ => false 
       end.
 
@@ -171,9 +171,9 @@ Section CorpsSyntax.
       | efql e => efql (ren e ξ)
       | lam t e => lam t (ren e (renup ξ))
       | appE e1 e2 => appE (ren e1 ξ) (ren e2 ξ)
-      | send e seen m p q => send (ren e ξ) seen m p q
-      | up e seen m p => up (ren e ξ) seen m p
-      | down e seen m p => down (ren e ξ) seen m p
+      | send e m p q => send (ren e ξ) m p q
+      | up e m p => up (ren e ξ)  m p
+      | down e m p => down (ren e ξ) m p
       end.
     
     Lemma ren_ext : forall (ξ1 ξ2 : renaming),
@@ -297,9 +297,9 @@ Section CorpsSyntax.
       | efql e => efql (subst e σ)
       | lam t e => lam t (subst e (substup σ))
       | appE e1 e2 => appE (subst e1 σ) (subst e2 σ)
-      | send e seen m p q => send (subst e σ) seen m p q
-      | up e seen m p => up (subst e σ) seen m p
-      | down e seen m p => down (subst e σ) seen m p
+      | send e m p q => send (subst e σ) m p q
+      | up e m p => up (subst e σ) m p
+      | down e m p => down (subst e σ) m p
       end.
 
     Lemma subst_ext : forall σ1 σ2,
@@ -427,12 +427,12 @@ Section CorpsSyntax.
     | lam_ca (t : type) {e : expr} {n : nat} (pf : closed_above e (S n)) : closed_above (lam t e) n
     | app_ca {e1 e2 : expr} {n : nat} (pf1 : closed_above e1 n) (pf2 : closed_above e2 n)
       : closed_above (appE e1 e2) n
-    | send_ca {e : expr} (seen : nat) (m : mod) (p q : PName) {n : nat} (pf : closed_above e n)
-      : closed_above (send e seen m p q) n
-    | up_ca {e : expr} (seen : nat) (m : mod) (p : PName) {n : nat} (pf : closed_above e n)
-      : closed_above (up e seen m p) n
-    | down_ca {e : expr} (seen : nat) (m : mod) (p : PName) {n : nat} (pf : closed_above e n)
-      : closed_above (down e seen m p) n.
+    | send_ca {e : expr} (m : mod) (p q : PName) {n : nat} (pf : closed_above e n)
+      : closed_above (send e m p q) n
+    | up_ca {e : expr} (m : mod) (p : PName) {n : nat} (pf : closed_above e n)
+      : closed_above (up e m p) n
+    | down_ca {e : expr}  (m : mod) (p : PName) {n : nat} (pf : closed_above e n)
+      : closed_above (down e m p) n.
 
     Fixpoint closed_aboveb (e : expr) (n : nat) : bool :=
       match e with
@@ -449,9 +449,9 @@ Section CorpsSyntax.
       | efql e => closed_aboveb e n
       | lam t e => closed_aboveb e (S n)
       | appE e1 e2 => closed_aboveb e1 n && closed_aboveb e2 n
-      | send e seen m p q => closed_aboveb e n
-      | up e seen m p => closed_aboveb e n
-      | down e seen m p => closed_aboveb e n
+      | send e m p q => closed_aboveb e n
+      | up e  m p => closed_aboveb e n
+      | down e m p => closed_aboveb e n
       end.
 
     Lemma closed_aboveb_spec1 : forall e n, closed_aboveb e n = true -> closed_above e n.
@@ -636,9 +636,9 @@ Section CorpsSyntax.
       | efql e => min_closure e
       | lam t e => pred (min_closure e)
       | appE e1 e2 => max (min_closure e1) (min_closure e2)
-      | send e seen m p q => min_closure e
-      | up e seen m p => min_closure e
-      | down e seen m p => min_closure e
+      | send e m p q => min_closure e
+      | up e  m p => min_closure e
+      | down e m p => min_closure e
       end.
 
     Theorem closed_above_min : forall e, closed_above e (min_closure e).

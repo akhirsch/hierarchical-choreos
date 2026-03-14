@@ -20,6 +20,10 @@ Section Contexts.
   #[local] Notation type := (type PName).
   #[local] Notation expr := (expr PName).
 
+  (* Inductive TypedSubst (Γ Δ : Ctxt) := *)
+  (*   EmptySubst : TypedSubst EmptyCtxt EmptyCtxt *)
+  (* | VarSubst (Γ Δ : Ctxt) (m : mod) (τ : type) (σ : TypedSubst Γ Δ) (e : expr) (typ :  *)
+
   Record Ctxt :=
     {
       vars : nat -> mod * type;
@@ -163,7 +167,7 @@ Section Contexts.
     Next Obligation.
       destruct (change_prefix m1 (locks Γ n) m2) eqn:eq0;
         destruct (change_prefix m1 (locks Γ m) m2) eqn:eq1.
-      - apply change_prefix_of_prefix' with (m1 := m1) (m3 := m2) (m2 := locks Γ n) (m2' := locks Γ m);
+      - eapply @change_prefix_of_prefix' with (m1 := m1) (m3 := m2) (m2 := locks Γ n) (m2' := locks Γ m);
           auto; apply locks_mono; auto.
       - apply only_prefixes_changable in eq0.
         assert (PrefixOf m1 (locks Γ m)) 
@@ -178,7 +182,7 @@ Section Contexts.
     Next Obligation.
       destruct (change_prefix m1 (locks Γ n) m2) eqn:eq0;
         destruct (change_prefix m1 (all_locks Γ) m2) eqn:eq1.
-      - apply change_prefix_of_prefix' with (m1 := m1) (m2 := locks Γ n) (m2' := all_locks Γ) (m3 := m2);
+      - eapply @change_prefix_of_prefix' with (m1 := m1) (m2 := locks Γ n) (m2' := all_locks Γ) (m3 := m2);
           auto; apply locks_bound.
       - exfalso. apply only_prefixes_changable in eq0.
         apply change_prefix_of_prefix in eq1; auto.
