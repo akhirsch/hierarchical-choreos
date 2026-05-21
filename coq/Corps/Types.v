@@ -390,44 +390,43 @@ Section CorpsTypes.
         lock_location Γ1 m = Some n ->
         TypedSubst Γ2 (unit_subst_before σ n) Δ2.
     Proof using.
-    Admitted.
-    (*         intros Γ1 Γ2 Δ1 Δ2 σ m p n styp; revert Γ2 Δ2 m p n; dependent induction styp; *)
-    (*     intros Γ2 Δ2 n p n' eqΓ eqΔ loc; cbn in *. *)
-    (*   - eapply add_lock_after_no_locks in H1; rewrite H1 in eqΔ; inversion eqΔ. *)
-    (*   - destruct (remove_lock_after Γ n p) eqn:eqΓ'; *)
-    (*       inversion eqΓ; subst; clear eqΓ; rename eqΓ' into eqΓ. *)
-    (*     destruct (lock_location Γ (cons n p)) eqn:loc'; *)
-    (*       inversion loc; subst; clear loc; rename loc' into loc. *)
-    (*     apply VarLSubst with (e := uu) (σ1 := unit_subst_before σ1 n0). *)
-    (*     apply IHstyp with (m := n) (p := p); auto. *)
-    (*     apply UnitTyping. *)
-    (*     intro n1; destruct n1; cbn. reflexivity. *)
-    (*     unfold unit_subst_before. *)
-    (*     destruct (PeanoNat.Nat.ltb n1 n0) eqn:eq. *)
-    (*     rewrite PeanoNat.Nat.ltb_lt in eq; rewrite PeanoNat.Nat.succ_lt_mono in eq; rewrite <- PeanoNat.Nat.ltb_lt in eq; *)
-    (*       rewrite eq; reflexivity. *)
-    (*     destruct (PeanoNat.Nat.ltb (S n1) (S n0)) eqn:eq'. *)
-    (*     rewrite PeanoNat.Nat.ltb_lt in eq'; apply <- PeanoNat.Nat.succ_lt_mono in eq'; rewrite <- PeanoNat.Nat.ltb_lt in eq'; *)
-    (*       rewrite eq' in eq; inversion eq. *)
-    (*     rewrite H1; cbn; reflexivity. *)
-    (*   - destruct (remove_lock_after Δ n p) eqn:eqΔ'; inversion eqΔ; subst; clear eqΔ; rename eqΔ' into eqΔ; rename c into Δ2. *)
-    (*     apply VarRSubst with (σ1 := unit_subst_before σ1 n'). *)
-    (*     eapply IHstyp; eauto. *)
-    (*     intro n0. unfold unit_subst_before. *)
-    (*     destruct (PeanoNat.Nat.ltb n0 n'); cbn; auto. *)
-    (*   - rewrite <- (TypedSubstAllLocks styp) in eqΔ. *)
-    (*     destruct (prefixb (cons n p) (all_locks Γ)) eqn:pfx; *)
-    (*       [| destruct (remove_Prefix (all_locks Γ) n) as [m''|]; [|inversion eqΓ]]. *)
-    (*     -- eapply IHstyp; eauto. *)
-    (*     -- destruct (prefixb (cons m'' p) m) eqn:pfx'; inversion eqΓ; inversion eqΔ; subst; clear eqΓ eqΔ. *)
-    (*        destruct (prefixb (cons n p) (mod_app (all_locks Γ) m)) eqn:pfx''; *)
-    (*          inversion loc; subst; clear loc. *)
-    (*        apply LockSubst. eapply TypeSubst_ext; [| exact styp]. *)
-    (*        intro n0. unfold unit_subst_before. *)
-    (*        destruct (PeanoNat.Nat.ltb n0 0) eqn:eq; [| reflexivity]. *)
-    (*        rewrite PeanoNat.Nat.ltb_lt in eq; inversion eq. *)
+      intros Γ1 Γ2 Δ1 Δ2 σ m p n styp; revert Γ2 Δ2 m p n; dependent induction styp;
+        intros Γ2 Δ2 n p n' eqΓ eqΔ loc; cbn in *.
+      - (* eapply add_lock_after_no_locks in H1; rewrite H1 in eqΔ; inversion eqΔ. *) admit.
+      - destruct (add_lock_after Γ n p) eqn:eqΓ';
+          inversion eqΓ; subst; clear eqΓ; rename eqΓ' into eqΓ.
+        destruct (lock_location Γ n) eqn:loc';
+          inversion loc; subst; clear loc; rename loc' into loc.
+        apply VarLSubst with (e := uu) (σ1 := unit_subst_before σ1 n0).
+        apply IHstyp with (m := n) (p := p); auto.
+        apply UnitTyping.
+        intro n1; destruct n1; cbn. reflexivity.
+        unfold unit_subst_before.
+        destruct (PeanoNat.Nat.ltb n1 n0) eqn:eq.
+        rewrite PeanoNat.Nat.ltb_lt in eq; rewrite PeanoNat.Nat.succ_lt_mono in eq; rewrite <- PeanoNat.Nat.ltb_lt in eq;
+          rewrite eq; reflexivity.
+        destruct (PeanoNat.Nat.ltb (S n1) (S n0)) eqn:eq'.
+        rewrite PeanoNat.Nat.ltb_lt in eq'; apply <- PeanoNat.Nat.succ_lt_mono in eq'; rewrite <- PeanoNat.Nat.ltb_lt in eq';
+          rewrite eq' in eq; inversion eq.
+        rewrite H1; cbn; reflexivity.
+      - destruct (add_lock_after Δ n p) eqn:eqΔ'; inversion eqΔ; subst; clear eqΔ; rename eqΔ' into eqΔ; rename c into Δ2.
+        apply VarRSubst with (σ1 := unit_subst_before σ1 n').
+        eapply IHstyp; eauto.
+        intro n0. unfold unit_subst_before.
+        destruct (PeanoNat.Nat.ltb n0 n'); cbn; auto.
+      - rewrite <- (TypedSubstAllLocks styp) in eqΔ.
+        destruct (prefixb n (all_locks Γ)) eqn:pfx;
+          [| destruct (remove_Prefix (all_locks Γ) n) as [m''|]; [|inversion eqΓ]].
+        -- eapply IHstyp; eauto.
+        -- destruct (prefixb m'' m) eqn:pfx'; inversion eqΓ; inversion eqΔ; subst; clear eqΓ eqΔ.
+           destruct (prefixb n (mod_app (all_locks Γ) m)) eqn:pfx'';
+             inversion loc; subst; clear loc.
+           apply LockSubst. eapply TypeSubst_ext; [| exact styp].
+           intro n0. unfold unit_subst_before.
+           destruct (PeanoNat.Nat.ltb n0 0) eqn:eq; [| reflexivity].
+           rewrite PeanoNat.Nat.ltb_lt in eq; inversion eq.
     (* Qed. *)
-
+    Admitted.
 
     Theorem TypedSubstitution : forall {Γ Δ : Ctxt} {σ : substitution} {e : expr} {τ : type},
         Typed Γ e τ ->
@@ -478,8 +477,24 @@ Section CorpsTypes.
         -- rewrite (remove_lock_after_num_vars eq).
            eapply Typed_closed_above; eauto.
         -- fold (closed_below e n); assumption.
-      - admit.        
-    Admitted.
+      - pose proof (add_lock_after_prefix eq).
+        rewrite (TypedSubstAllLocks styp) in H0.
+        rename Δ' into Γ';
+          destruct (@add_lock_after_defined PName _ Δ m p H0) as [Δ' eqΔ'].
+        destruct (lock_location_Some H0) as [x eqx].
+        apply @DownTyping with (n := x) (Δ := Δ'); auto.
+        rewrite (@closed_below_subst_ext PName e σ (unit_subst_before σ n) n); auto.
+        apply IHtyp. eapply add_lock_after_subst; eauto.
+        intros k n_le_k; unfold unit_subst_before; destruct (PeanoNat.Nat.ltb k n) eqn:eq'';
+          [rewrite PeanoNat.Nat.ltb_lt in eq''; lia| reflexivity].
+        apply @closed_narrow_subst with (n := 0) (m := n) (j := num_vars Γ).
+        -- intros k H1 H2;  inversion H2.
+        -- intros k H1 H2;
+             eapply @TypedSubstLockLocation with (m := m); eauto.
+        -- rewrite (add_lock_after_num_vars eq).
+           eapply Typed_closed_above; eauto.
+        -- fold (closed_below e n); assumption.
+    Qed.
         
   End Substitution.
 End CorpsTypes.
