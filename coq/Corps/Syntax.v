@@ -14,7 +14,7 @@ Set Implicit Arguments.
 Section CorpsSyntax.
 
   Context {PName : Type} `{EqBool PName}.
-  #[local] Notation mod := (@mod PName).
+  #[local] Abbreviation mod := (@mod PName).
   #[local] Definition ptm := @proc_to_mod PName.
   #[local] Definition PrefixOfT := @PrefixOfT PName.
   Coercion ptm : PName >-> mod.
@@ -207,6 +207,7 @@ Section CorpsSyntax.
     Qed.
 
     Lemma ren_fusion : forall e ξ1 ξ2, ren (ren e ξ1) ξ2 = ren e (fun n => ξ2 (ξ1 n)).
+    Proof using.
       intro e; induction e; intros ξ1 ξ2; cbn;
         repeat match goal with
           | [ |- ?a = ?a ] => reflexivity
@@ -651,10 +652,522 @@ Section CorpsSyntax.
     Proof using.
       intros e n clsd; induction clsd; cbn; lia.
     Qed.
+
+    Inductive closed_between : expr -> nat -> nat -> Prop :=
+    | var_cb1 {n m x : nat} (x_lt_n : x < n) : closed_between (var x) n m
+    | var_cb2 {n m x : nat} (m_lt_x : m <= x) : closed_between (var x) n m
+    | uu_cb (n m : nat) : closed_between uu n m
+    | atE_cb (p : PName) {e : expr} {n m : nat} (pf : closed_between e n m) : closed_between (atE p e) n m
+    | letAt_cb (p : PName) {e1 e2 : expr} {n m : nat}
+        (pf1 : closed_between e1 n m) (pf2 : closed_between e2 (S n) (S m))
+      : closed_between (letAt p e1 e2) n m
+    | pair_cb {e1 e2 : expr} {n m : nat} (pf1 : closed_between e1 n m) (pf2 : closed_between e2 n m)
+      : closed_between (pair e1 e2) n m
+    | pi1_cb {e : expr} {n m : nat} (pf : closed_between e n m) : closed_between (pi1 e) n m
+    | pi2_cb {e : expr} {n m : nat} (pf : closed_between e n m) : closed_between (pi2 e) n m
+    | inl_cb {e : expr} {n m : nat} (pf : closed_between e n m) : closed_between (inl e) n m
+    | inr_cb {e : expr} {n m : nat} (pf : closed_between e n m) : closed_between (inr e) n m
+    | caseE_cb {e1 e2 e3 : expr} {n m : nat}
+        (pf1 : closed_between e1 n m)
+        (pf2 : closed_between e2 (S n) (S m))
+        (pf3 : closed_between e3 (S n) (S m))
+      : closed_between (caseE e1 e2 e3) n m
+    | efql_cb {e : expr} {n m : nat} (pf : closed_between e n m) : closed_between (efql e) n m
+    | lam_cb (t : type) {e : expr} {n m : nat} (pf : closed_between e (S n) (S m))
+      : closed_between (lam t e) n m
+    | app_cb {e1 e2 : expr} {n m : nat} (pf1 : closed_between e1 n m) (pf2 : closed_between e2 n m)
+      : closed_between (appE e1 e2) n m
+    | send_cb {e : expr} (m : mod) (p q : PName) {n k : nat} (pf : closed_between e n k)
+      : closed_between (send e m p q) n k
+    | up_cb {e : expr} (m : mod) (p : PName) {n k : nat} (pf : closed_between e n k)
+      : closed_between (up e m p) n k
+    | down_cb {e : expr}  (m : mod) (p : PName) {n k : nat} (pf : closed_between e n k)
+      : closed_between (down e m p) n k.
+
+    Definition closed_below (e : expr) (m : nat) : Prop :=
+      closed_between e 0 m.
+    
+    Fixpoint closed_betweenb (e : expr) (n k : nat) : bool :=
+      match e with
+      | var x => PeanoNat.Nat.ltb x n || PeanoNat.Nat.leb k x
+      | uu => true
+      | atE p e => closed_betweenb e n k
+      | letAt p e1 e2 => closed_betweenb e1 n k && closed_betweenb e2 (S n) (S k)
+      | pair e1 e2 => closed_betweenb e1 n k && closed_betweenb e2 n k
+      | pi1 e => closed_betweenb e n k
+      | pi2 e => closed_betweenb e n k
+      | inl e => closed_betweenb e n k
+      | inr e => closed_betweenb e n k
+      | caseE e1 e2 e3 =>
+          closed_betweenb e1 n k && closed_betweenb e2 (S n) (S k) && closed_betweenb e3 (S n) (S k)
+      | efql e => closed_betweenb e n k
+      | lam t e => closed_betweenb e (S n) (S k)
+      | appE e1 e2 => closed_betweenb e1 n k && closed_betweenb e2 n k
+      | send e m p q => closed_betweenb e n k
+      | up e m p => closed_betweenb e n k
+      | down e m p => closed_betweenb e n k
+      end.
+
+    Definition closed_belowb (e : expr) (m : nat) := closed_betweenb e 0 m.
+    
+    Lemma closed_betweenb_spec1 : forall e n k, closed_betweenb e n k = true -> closed_between e n k.
+    Proof using.
+      intro e; induction e; intros k1 k2 eq; cbn in *;
+        repeat match goal with
+          | [ H : ?b1 && ?b2 = true |- _ ] => apply Bool.andb_true_iff in H; destruct H
+          | [ H : ?b1 || ?b2 = true |- _ ] => apply Bool.orb_true_iff in H; destruct H
+          end; try (econstructor; eauto; fail).
+      destruct k1; [inversion H0|].
+      constructor.
+      apply Compare_dec.leb_complete in H0; rewrite PeanoNat.Nat.lt_succ_r; assumption.
+      apply var_cb2.
+      apply Compare_dec.leb_complete; assumption.
+    Qed.
+
+    Lemma closed_between_spec2 : forall e n k, closed_between e n k -> closed_betweenb e n k = true.
+    Proof using.
+      intros e n k clsd; induction clsd; cbn;
+        repeat match goal with
+          | [ |- _ && _ = true ] => apply Bool.andb_true_iff; split
+          | [ |- ?b1 || ?b2 = true ] => apply Bool.orb_true_iff
+          end; auto.
+      - left. destruct n; [destruct (PeanoNat.Nat.nlt_0_r x x_lt_n) |].
+        apply PeanoNat.Nat.leb_le; apply PeanoNat.Nat.lt_succ_r; assumption.
+      - right; apply Compare_dec.leb_correct; assumption.
+    Qed.
+
+    Theorem closed_betweenb_spec : forall e n m, closed_between e n m <-> closed_betweenb e n m = true.
+    Proof using.
+      intros e n m; split; [apply closed_between_spec2 | apply closed_betweenb_spec1].
+    Qed.
+
+    Corollary closed_belowb_spec : forall e n, closed_below e n <-> closed_belowb e n = true.
+    Proof using.
+      unfold closed_below; unfold closed_belowb; intros e n; apply closed_betweenb_spec.
+    Qed.
+
+    Theorem closed_between_mono : forall e n m,
+        closed_between e n m -> forall n' m', n < n' -> m' < m -> closed_between e n' m'.
+    Proof using.
+      intros e n m clsd; induction clsd; intros n' m' n_lt_n' m'_lt_m;
+        repeat match goal with
+          | [ IH : forall n' m', ?n < n' -> m' < ?m -> closed_between ?e n' m',
+                H1 : ?n < ?n', H2 : ?m' < ?m |- _ ] =>
+              lazymatch goal with
+              | [ _ : closed_between e n' m' |- _ ] => fail
+              | _ => pose proof (IH n' m' H1 H2)
+              end
+          | [ IH : forall n' m', S ?n < n' -> m' < S ?m -> closed_between ?e n' m',
+                H1 : ?n < ?n', H2 : ?m' < ?m |- _ ] =>
+              lazymatch goal with
+              | [ _ : closed_between e (S n') (S m') |- _ ] => fail
+              | _ => pose proof (IH (S n') (S m') (ltac:(rewrite <- PeanoNat.Nat.succ_lt_mono; exact H1))
+                                  (ltac:(rewrite <- PeanoNat.Nat.succ_lt_mono; exact H2)))
+              end 
+          end; try (econstructor; eauto; fail).
+      try (constructor; etransitivity; eauto; fail).
+      apply var_cb2; transitivity m; lia.
+    Qed.
+
+    Theorem closed_between_mono' : forall e n m,
+        closed_between e n m ->
+        forall n' m', n <= n' -> m' <= m -> closed_between e n' m'.
+    Proof using.
+      intros e n m clsd; induction clsd; intros n' m' n_le_n' m'_le_m;
+        repeat match goal with
+          | [ IH : forall n' m', ?n <= n' -> m' <= ?m -> closed_between ?e n' m',
+                H1 : ?n <= ?n', H2 : ?m' <= ?m |- _ ] =>
+              lazymatch goal with
+              | [ _ : closed_between e n' m' |- _ ] => fail
+              | _ => pose proof (IH n' m' H1 H2)
+              end
+          | [ IH : forall n' m', S ?n <= n' -> m' <= S ?m -> closed_between ?e n' m',
+                H1 : ?n <= ?n', H2 : ?m' <= ?m |- _ ] =>
+              lazymatch goal with
+              | [ _ : closed_between e (S n') (S m') |- _ ] => fail
+              | _ => pose proof (IH (S n') (S m') (ltac:(rewrite <- PeanoNat.Nat.succ_le_mono; exact H1))
+                                  (ltac:(rewrite <- PeanoNat.Nat.succ_le_mono; exact H2)))
+              end 
+          end; try (econstructor; eauto; fail).
+      - constructor; apply PeanoNat.Nat.lt_le_trans with (m := n); auto.
+      - apply var_cb2; transitivity m; auto. 
+    Qed.
+
+    Corollary closed_below_mono' : forall e n, closed_below e n -> forall n', n' <= n -> closed_below e n'.
+    Proof using.
+      unfold closed_below. intros e n clsd n' n'_le_n.
+      apply closed_between_mono' with (n := 0) (m := n); auto.
+    Qed.
+
+    Corollary closed_below_mono : forall e n, closed_below e n -> forall n', n' < n -> closed_below e n'.
+    Proof using.
+      intros e n H0 n' H1; apply closed_below_mono' with (n := n); auto; lia.
+    Qed.
+
+    Lemma closed_between_ren_up1 : forall ξ n,
+        (forall k, k < n -> ξ k = k) ->
+        forall k, k < (S n) -> renup ξ k = k.
+    Proof using.
+      intros ξ n ξbd k k_lt_Sn; destruct k; cbn. reflexivity.
+      rewrite ξbd. reflexivity.
+      rewrite PeanoNat.Nat.succ_lt_mono; assumption.
+    Qed.
+
+    
+    Lemma closed_between_ren_up2 : forall ξ n,
+        (forall k, n <= k -> ξ k = k) ->
+        forall k, (S n) <= k -> renup ξ k = k.
+    Proof using.
+      intros ξ n ξbd k Sn_lt_k; destruct k; cbn. reflexivity.
+      rewrite ξbd. reflexivity.
+      rewrite PeanoNat.Nat.succ_le_mono; assumption.
+    Qed.
+
+    Lemma closed_between_ren_id : forall e ξ n m,
+        (forall k, k < n -> ξ k = k) ->
+        (forall k, m <= k -> ξ k = k) ->  
+        closed_between e n m ->
+        ren e ξ = e.
+    Proof using.
+      intros e ξ n m ξbd1 ξbd2 clsd; revert ξ ξbd1 ξbd2; induction clsd; intros ξ ξbd1 ξbd2; cbn;
+        repeat match goal with
+          | [ |- ?a = ?a ] => reflexivity
+          | [ IH : forall ξ, (forall k, k < ?n -> ξ k = k) -> (forall k', ?m <= k' -> ξ k' = k') -> ren ?e ξ = ?e,
+                H1 : forall k, k < ?n -> ?ξ k = k, H2 : forall k, ?m <= k -> ?ξ k = k |- context[ren ?e ?ξ] ] =>
+              rewrite (IH ξ H1 H2)
+          | [ IH : forall ξ, (forall k, k < S ?n -> ξ k = k) -> (forall k', S ?m <= k' -> ξ k' = k') -> ren ?e ξ = ?e,
+                H1 : forall k, k < ?n -> ?ξ k = k, H2 : forall k, ?m <= k -> ?ξ k = k |- context[ren ?e (renup ?ξ)] ] =>
+              rewrite (IH (renup ξ) (closed_between_ren_up1 ξ H1) (closed_between_ren_up2 ξ H2))
+          end.
+      - rewrite ξbd1; auto.
+      - rewrite ξbd2; auto.
+    Qed.
+    Lemma closed_between_ren_ext_up1 : forall ξ1 ξ2 n,
+        (forall k, k < n -> ξ1 k = ξ2 k) ->
+        (forall k, k < S n -> renup ξ1 k = renup ξ2 k).
+    Proof using.
+      intros ξ1 ξ2 n H2 k; revert n H2; destruct k; intros n H2 k_lt_Sn; cbn in *.
+      - reflexivity.
+      - rewrite H2; [reflexivity| apply PeanoNat.Nat.succ_lt_mono; assumption].
+    Qed.
+
+    Lemma closed_between_ren_ext_up2 : forall ξ1 ξ2 n,
+        (forall k, n <= k -> ξ1 k = ξ2 k) ->
+        (forall k, S n <= k -> renup ξ1 k = renup ξ2 k).
+    Proof using.
+      intros ξ1 ξ2 n H1 k k_lt_n; destruct k; cbn.
+      - reflexivity.
+      - rewrite H1; [reflexivity| apply le_S_n; assumption].
+    Qed.
+    
+    Lemma closed_between_ren_ext : forall e ξ1 ξ2 n m,
+        (forall k, k < n -> ξ1 k = ξ2 k) ->
+        (forall k, m <= k -> ξ1 k = ξ2 k) ->
+        closed_between e n m ->
+        ren e ξ1 = ren e ξ2.
+    Proof using.
+      intro e; induction e; intros ξ1 ξ2 n' m' blw abv clsd; inversion clsd; subst; cbn;
+        repeat match goal with
+          | [ |- ?a = ?a ] => reflexivity
+          | [ H : ?P |- ?P ] => exact H
+          | [ IH : forall ξ1 ξ2 n m, (forall k, k < n -> ξ1 k = ξ2 k) ->
+                                (forall k', m <= k' -> ξ1 k' = ξ2 k') ->
+                                closed_between ?e n m ->
+                                ren ?e ξ1 = ren ?e ξ2,
+                H1 : forall k, k < ?n -> ?ξ1 k = ?ξ2 k,
+                H2 : forall k, ?m <= k -> ?ξ1 k = ?ξ2 k,
+                H3 : closed_between ?e ?n ?m
+                |- context[ren ?e ?ξ1]] =>
+              rewrite (IH ξ1 ξ2 n m H1 H2 H3)
+          | [ H : forall k, k < ?n -> ?ξ1 k = ?ξ2 k |- context[renup ?ξ1]] =>
+              lazymatch goal with
+              | [_ : forall k, k < S n -> renup ξ1 k = renup ξ2 k |- _ ] => fail
+              | _ => pose proof (closed_between_ren_ext_up1 ξ1 ξ2 H)
+              end 
+          | [ H : forall k, ?m <= k -> ?ξ1 k = ?ξ2 k |- context[renup ?ξ1]] =>
+              lazymatch goal with
+              | [_ : forall k, S m <= k -> renup ξ1 k = renup ξ2 k |- _ ] => fail
+              | _ => pose proof (closed_between_ren_ext_up2 ξ1 ξ2 H)
+              end 
+          end; eauto.
+    Qed.                   
+    Corollary closed_below_ren_ext : forall e ξ1 ξ2 m,
+        (forall k, m <= k -> ξ1 k = ξ2 k) ->
+        closed_below e m ->
+        ren e ξ1 = ren e ξ2.
+    Proof using.
+      intros e ξ1 ξ2 m H0 H1; unfold closed_below in H1.
+      apply closed_between_ren_ext with (n := 0) (m := m); auto.
+      intros k H2; inversion H2.
+    Qed.
+
+    Lemma closed_between_subst_up1 : forall σ n,
+        (forall k, k < n -> σ k = var k) ->
+        forall k, k < (S n) -> substup σ k = var k.
+    Proof using.
+      intros σ n σbd k k_lt_Sn; destruct k; cbn. reflexivity.
+      rewrite σbd. reflexivity.
+      rewrite PeanoNat.Nat.succ_lt_mono; assumption.
+    Qed.
+
+    Lemma closed_between_subst_up2 : forall σ n,
+        (forall k, n <= k -> σ k = var k) ->
+        forall k, (S n) <= k -> substup σ k = var k.
+    Proof using.
+      intros σ n σbd k Sn_lt_k; destruct k; cbn. reflexivity.
+      rewrite σbd. reflexivity.
+      rewrite PeanoNat.Nat.succ_le_mono; assumption.
+    Qed.
+    
+    Lemma closed_between_subst_id : forall e σ n m,
+        (forall k, k < n -> σ k = var k) ->
+        (forall k, m <= k -> σ k = var k) ->  
+        closed_between e n m ->
+        subst e σ = e.
+    Proof using.
+      intros e σ n m σbd1 σbd2 clsd; revert σ σbd1 σbd2; induction clsd; intros σ σbd1 σbd2; cbn;
+        repeat match goal with
+          | [ |- ?a = ?a ] => reflexivity
+          | [ IH : forall σ, (forall k, k < ?n -> σ k = var k) -> (forall k', ?m <= k' -> σ k' = var k') -> subst ?e σ = ?e,
+                H1 : forall k, k < ?n -> ?σ k = var k, H2 : forall k, ?m <= k -> ?σ k = var k |- context[subst ?e ?σ] ] =>
+              rewrite (IH σ H1 H2)
+          | [ IH : forall σ, (forall k, k < S ?n -> σ k = var k) -> (forall k', S ?m <= k' -> σ k' = var k') -> subst ?e σ = ?e,
+                H1 : forall k, k < ?n -> ?σ k = var k, H2 : forall k, ?m <= k -> ?σ k = var k |- context[subst ?e (substup ?σ)] ] =>
+              rewrite (IH (substup σ) (closed_between_subst_up1 σ H1) (closed_between_subst_up2 σ H2))
+          end.
+      - rewrite σbd1; auto.
+      - rewrite σbd2; auto.
+    Qed.
+
+    Lemma closed_between_ren_subst_up1 : forall σ1 σ2 n,
+        (forall k, k < n -> σ1 k = σ2 k) ->
+        (forall k, k < S n -> substup σ1 k = substup σ2 k).
+    Proof using.
+      intros σ1 σ2 n H2 k; revert n H2; destruct k; intros n H2 k_lt_Sn; cbn in *.
+      - reflexivity.
+      - rewrite H2; [reflexivity| apply PeanoNat.Nat.succ_lt_mono; assumption].
+    Qed.
+
+    Lemma closed_between_ren_subst_up2 : forall σ1 σ2 n,
+        (forall k, n <= k -> σ1 k = σ2 k) ->
+        (forall k, S n <= k -> substup σ1 k = substup σ2 k).
+    Proof using.
+      intros σ1 σ2 n H1 k k_lt_n; destruct k; cbn.
+      - reflexivity.
+      - rewrite H1; [reflexivity| apply le_S_n; assumption].
+    Qed.
+
+    Lemma closed_between_subst_ext : forall e σ1 σ2 n m,
+        (forall k, k < n -> σ1 k = σ2 k) ->
+        (forall k, m <= k -> σ1 k = σ2 k) ->
+        closed_between e n m ->
+        subst e σ1 = subst e σ2.
+    Proof using.
+      intro e; induction e; intros σ1 σ2 n' m' blw abv clsd; inversion clsd; subst; cbn;
+        repeat match goal with
+          | [ |- ?a = ?a ] => reflexivity
+          | [ H : ?P |- ?P ] => exact H
+          | [ IH : forall σ1 σ2 n m, (forall k, k < n -> σ1 k = σ2 k) ->
+                                (forall k', m <= k' -> σ1 k' = σ2 k') ->
+                                closed_between ?e n m ->
+                                subst ?e σ1 = subst ?e σ2,
+                H1 : forall k, k < ?n -> ?ξ1 k = ?ξ2 k,
+                H2 : forall k, ?m <= k -> ?ξ1 k = ?ξ2 k,
+                H3 : closed_between ?e ?n ?m
+                |- context[subst ?e ?ξ1]] =>
+              rewrite (IH ξ1 ξ2 n m H1 H2 H3)
+          | [ H : forall k, k < ?n -> ?σ1 k = ?σ2 k |- context[substup ?σ1]] =>
+              lazymatch goal with
+              | [_ : forall k, k < S n -> substup σ1 k = substup σ2 k |- _ ] => fail
+              | _ => pose proof (closed_between_ren_subst_up1 σ1 σ2 H)
+              end 
+          | [ H : forall k, ?m <= k -> ?σ1 k = ?σ2 k |- context[substup ?σ1]] =>
+              lazymatch goal with
+              | [_ : forall k, S m <= k -> substup σ1 k = renup σ2 k |- _ ] => fail
+              | _ => pose proof (closed_between_ren_subst_up2 σ1 σ2 H)
+              end 
+          end; eauto.
+    Qed.
+
+    Corollary closed_below_subst_ext : forall e σ1 σ2 m,
+        (forall k, m <= k -> σ1 k = σ2 k) ->
+        closed_below e m ->
+        subst e σ1 = subst e σ2.
+    Proof using.
+      intros e σ1 σ2 m H0 H1; unfold closed_below in H1.
+      apply closed_between_subst_ext with (n := 0) (m := m); auto.
+      intros k H2; inversion H2.
+    Qed.
+
+    Lemma renup_closed_below : forall {ξ : renaming} {k k' : nat},
+        (forall n, k <= n -> k' <= ξ n) ->
+        (forall n, S k <= n -> S k' <= renup ξ n).
+    Proof using.
+      intros ξ k k' H0 n; induction n; intro H1; cbn.
+      inversion H1.
+      apply le_S_n in H1; apply le_n_S; apply H0; auto.
+    Qed.
+
+    Lemma closed_between_ren : forall {e : expr} {ξ : renaming} {k1 k2 k1' k2' : nat},
+        (forall n, n < k1' -> ξ n < k1) ->
+        (forall n, k2' <= n -> k2 <= ξ n) ->
+        closed_between e k1' k2' ->
+        closed_between (ren e ξ) k1 k2.
+    Proof using.
+      intros e; induction e; intros ξ k1 k2 k1' k2' H0 H1 clsd; inversion clsd; subst; cbn;
+        try (econstructor;
+             repeat match goal with
+               | [ IH : forall ξ k1 k2 k1' k2', (forall n, n < k1' -> ξ n < k1) -> (forall m, k2' <= m -> k2 <= ξ m) -> closed_between ?e k1' k2' -> closed_below (ren ?e ξ) k1 k2,
+                     H1 : forall n, n < ?k1' -> ?ξ n < ?k1,
+                     H2 : forall n, ?k2' <= n -> ?k2 <= ?ξ n,
+                     H3 : closed_between ?e ?k1' ?k2' |- closed_between (ren ?e ?ξ) ?k1 ?k ] =>
+                   apply (IH ξ k1 k2 k1' k2' H1 H2 H3)
+               end; eauto; fail).
+      - constructor. apply IHe1 with (k1' := k1') (k2' := k2'); auto.
+        apply IHe2 with (k1' := S k1') (k2' := S k2'); auto.
+        apply renup_closed_above; assumption.
+        apply renup_closed_below; assumption.
+      - constructor.
+        -- eapply IHe1; eauto.
+        -- eapply IHe2; eauto. apply renup_closed_above; assumption.
+           apply renup_closed_below; assumption.
+        -- eapply IHe3; eauto. apply renup_closed_above; assumption.
+           apply renup_closed_below; assumption.
+      - constructor. eapply IHe; eauto.
+        apply renup_closed_above; assumption.
+        apply renup_closed_below; assumption.
+    Qed.
+
+    Corollary closed_below_ren : forall {e : expr} {ξ : renaming} {k k' : nat},
+        (forall n, k' <= n -> k <= ξ n) ->
+        closed_below e k' ->
+        closed_below (ren e ξ) k.
+    Proof using.
+      intros e ξ k k' H0 H1; unfold closed_below; eapply closed_between_ren;
+        eauto.
+      intros n H2; inversion H2.
+    Qed.
+
+    Lemma closed_between_self : forall (e : expr) (m : nat), closed_between e m m.
+    Proof using.
+      intro e; induction e; intro k; try (econstructor; eauto; fail).
+      destruct (PeanoNat.Nat.lt_ge_cases n k); (econstructor; eauto; fail).
+    Qed.
+
+    Corollary closed_below_zero : forall (e : expr), closed_below e 0.
+    Proof using.
+      intro e; unfold closed_below; apply closed_between_self.
+    Qed.
+
+    Theorem closed_between_substup1 : forall {σ : substitution} {n n' m' : nat},
+        (forall k, k < n -> closed_between (σ k) n' m') ->
+        (forall k, k < S n -> @closed_between (substup σ k) (S n') (S m')).
+    Proof using.
+      intros σ n n' m' clsd k k_lt_Sn.
+      destruct k; cbn. constructor; lia.
+      apply @closed_between_ren with (k2' := m') (k1' := n').
+      intros; rewrite <- PeanoNat.Nat.succ_lt_mono; assumption.
+      apply le_n_S.
+      apply clsd.
+      rewrite PeanoNat.Nat.succ_lt_mono; assumption.
+    Qed.
+
+    Theorem closed_between_substup2 : forall {σ : substitution} {m n' m' : nat},
+        (forall k, m <= k -> closed_between (σ k) n' m') ->
+        (forall k, S m <= k -> @closed_between (substup σ k) (S n') (S m')).
+    Proof using.
+      intros σ m n' m' H0 k H1; destruct k; cbn. constructor; lia.
+      apply le_S_n in H1.
+      apply @closed_between_ren with (k1' := n') (k2' := m').
+      intros; rewrite <- PeanoNat.Nat.succ_lt_mono; assumption.
+      apply le_n_S.
+      apply H0; assumption.
+    Qed.
+
+    Theorem closed_between_subst : forall {e : expr} {σ : substitution} {n m n' m' : nat},
+        (forall k, k < n -> closed_between (σ k) n' m') ->
+        (forall k, m <= k -> closed_between (σ k) n' m') ->
+        closed_between e n m ->
+        closed_between (subst e σ) n' m'.
+    Proof using.
+      intro e; induction e; intros σ i j i' j' clsd1 clsd2 clsd; inversion clsd; subst; cbn;
+        try (econstructor; repeat match goal with
+               | [ H : forall k, k < ?i -> closed_between (?σ k) ?i' ?j' |- context[substup ?σ]] =>
+                   lazymatch goal with
+                   | [_ : forall k, k < S i -> closed_between (substup σ k) (S i') (S j') |- _] => fail
+                   | _ => pose proof (closed_between_substup1 H)
+                   end
+               | [ H : forall k, ?j <= k -> closed_between (?σ k) ?i' ?j' |- context[substup ?σ]] =>
+                   lazymatch goal with
+                   | [_ : forall k, S j <= k  -> closed_between (substup σ k) (S i') (S j') |- _] => fail
+                   | _ => pose proof (closed_between_substup2 H)
+                   end
+               end; eauto; fail).
+      - apply clsd1; auto.
+      - apply clsd2; auto.
+    Qed.
+
+    Corollary closed_below_subst : forall {e : expr} {σ : substitution} {n n' : nat},
+        (forall k, n <= k -> closed_below (σ k) n') ->
+        closed_below e n ->
+        closed_below (subst e σ) n'.
+    Proof using.
+      unfold closed_below; intros e σ n n' H0 H1.
+      apply @closed_between_subst with (m := n) (n := 0); [ | exact H0 | exact H1].
+      intros k H2; inversion H2.
+    Qed.
+
+    Theorem closed_narrow_substup1 : forall {σ : substitution} {n n' m' j : nat},
+        (forall k, k < j -> k < n -> closed_between (σ k) n' m') ->
+        (forall k, k < S j -> k < S n -> @closed_between (substup σ k) (S n') (S m')).
+    Proof using.
+      intros σ n n' m' j clsd k k_lt_Sj k_lt_Sn.
+      destruct k; cbn. constructor; lia.
+      apply @closed_between_ren with (k2' := m') (k1' := n').
+      intros; rewrite <- PeanoNat.Nat.succ_lt_mono; assumption.
+      apply le_n_S.
+      apply clsd.
+      all: rewrite PeanoNat.Nat.succ_lt_mono; assumption.
+    Qed.
+
+    Theorem closed_narrow_substup2 : forall {σ : substitution} {m n' m' j : nat},
+        (forall k, k < j -> m <= k -> closed_between (σ k) n' m') ->
+        (forall k, k < S j -> S m <= k -> @closed_between (substup σ k) (S n') (S m')).
+    Proof using.
+      intros σ m n' m' j H0 k H1 H2; destruct k; cbn. constructor; lia.
+      apply le_S_n in H2.
+      apply @closed_between_ren with (k1' := n') (k2' := m').
+      intros; rewrite <- PeanoNat.Nat.succ_lt_mono; assumption.
+      apply le_n_S.
+      apply H0; lia.
+    Qed.
+
+    Lemma closed_narrow_subst : forall {e : expr} {σ : substitution} {n m n' m' j : nat},
+        (forall k, k < j -> k < n -> closed_between (σ k) n' m') ->
+        (forall k, k < j -> m <= k -> closed_between (σ k) n' m') ->
+        closed_above e j ->
+        closed_between e n m ->
+        closed_between (subst e σ) n' m'.
+    Proof using.
+      intro e; induction e; intros σ i j i' j' k clsd1 clsd2 clsdabv clsdbtwn;
+        inversion clsdabv; subst; inversion clsdbtwn; subst; cbn;
+        try lia; try (econstructor; repeat match goal with
+               | [ H : forall k, k < ?j -> k < ?i -> closed_between (?σ k) ?i' ?j' |- context[substup ?σ]] =>
+                   lazymatch goal with
+                   | [_ : forall k, k < S j -> k < S i -> closed_between (substup σ k) (S i') (S j') |- _] => fail
+                   | _ => pose proof (closed_narrow_substup1 H)
+                   end
+               | [ H : forall k, k < ?j -> ?m <= k -> closed_between (?σ k) ?i' ?j' |- context[substup ?σ]] =>
+                   lazymatch goal with
+                   | [_ : forall k, k < S j -> S m <= k  -> closed_between (substup σ k) (S i') (S j') |- _] => fail
+                   | _ => pose proof (closed_narrow_substup2 H)
+                   end
+               end; eauto; fail).
+      - apply clsd1; assumption.
+      - apply clsd2; assumption.
+    Qed.
     
   End Closure.
-
-  
   
 End CorpsSyntax.
 

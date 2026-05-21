@@ -130,8 +130,85 @@ Section Contexts.
       destruct (locks Γ n) eqn:eq'; inversion eq; subst.
       apply SuffixOf_modapp. apply IHΓ with (n := n); auto.
     Qed.
-  End BasicFunctions.
 
+    Fixpoint lock_location (Γ : Ctxt) (m : mod) : option nat :=
+      match Γ with
+      | EmptyCtxt =>
+          match m with
+          | Modalities.base => Some 0
+          | _ => None
+          end
+      | VarExt Γ _ _ =>
+          match lock_location Γ m with
+          | Some n => Some (S n)
+          | None => None
+          end
+      | LockExt Γ m' =>
+          let m'' := all_locks Γ in
+          if prefixb m m''
+          then lock_location Γ m
+          else if prefixb m (mod_app m'' m')
+               then Some 0
+               else None
+      end.
+
+    Lemma lock_location_Some : forall {Γ : Ctxt} {m : mod},
+        PrefixOf m (all_locks Γ) ->
+        exists n, lock_location Γ m = Some n.
+    Proof using.
+      intros Γ; induction Γ; intros m' pfx; cbn in *.
+      - apply PrefixOf_base in pfx; subst; exists 0; reflexivity.
+      - destruct (IHΓ m' pfx) as [m'' eq_m'']; rewrite eq_m''.
+        exists (S m''); reflexivity.
+      - destruct (prefixb m' (all_locks Γ)) eqn:pfx_eq.
+        -- apply IHΓ; apply prefixb_PrefixOf; assumption.
+        -- rewrite (PrefixOf_prefixb pfx). exists 0; reflexivity.
+    Qed.
+
+    Lemma lock_location_prefix : forall {Γ : Ctxt} {m : mod} {n : nat},
+        lock_location Γ m = Some n ->
+        PrefixOf m (all_locks Γ).
+    Proof using.
+      intros Γ; induction Γ; intros m' n eq; cbn in *.
+      - destruct m'; inversion eq; subst; clear eq; reflexivity.
+      - destruct (lock_location Γ m') eqn:eq'; inversion eq; subst; clear eq.
+        eapply IHΓ; eauto.
+      - destruct (prefixb m' (all_locks Γ)) eqn:pfx_eq.
+        apply prefixb_PrefixOf in pfx_eq;
+          transitivity (all_locks Γ); [assumption | apply PrefixOf_app].
+        destruct (prefixb m' (mod_app (all_locks Γ) m)) eqn:pfx_eq';
+          inversion eq; subst; clear eq.
+        apply prefixb_PrefixOf; assumption.
+    Qed.        
+
+    Corollary lock_location_None : forall {Γ : Ctxt} {m : mod},
+        ~ PrefixOf m (all_locks Γ) ->
+        lock_location Γ m = None.
+    Proof using.
+      intros Γ m H0; destruct (lock_location Γ m) eqn:eq; [| reflexivity].
+      apply lock_location_prefix in eq; destruct (H0 eq).
+    Qed.
+
+    Corollary lock_location_not_prefix : forall {Γ : Ctxt} {m : mod},
+        lock_location Γ m = None ->
+        ~ PrefixOf m (all_locks Γ).
+    Proof using.
+      intros Γ m H0. destruct (prefixb m (all_locks Γ)) eqn:eq.
+      2: { apply prefixb_not_PrefixOf in eq; assumption. }
+      apply prefixb_PrefixOf in eq; destruct (lock_location_Some eq) as [m' eqm'].
+      rewrite eqm' in H0; inversion H0.
+    Qed.
+
+    Lemma BaseLockLocation : forall {Γ : Ctxt},
+        lock_location Γ base = Some (num_vars Γ).
+    Proof using.
+      intro Γ; induction Γ; cbn; try rewrite IHΓ; try reflexivity.
+      rewrite (PrefixOf_prefixb (base_Prefix (all_locks Γ))).
+      reflexivity.
+    Qed.
+
+    
+  End BasicFunctions.
 
   Section InContext.
 
@@ -189,6 +266,13 @@ Section Contexts.
       intros Γ n m τ m'; split; intro H0; [split; [eapply InCtxt_vars_locks1 |eapply InCtxt_vars_locks2 ] | destruct H0; eapply InCtxt_vars_locks3]; eauto.
     Qed.
 
+    Lemma InCtxt_lt : forall {Γ : Ctxt} {n : nat} {m1 m2 : mod} {τ : type},
+        InCtxt n m1 τ m2 Γ ->
+        n < num_vars Γ.
+    Proof using.
+      intros Γ n m1 m2 τ i; induction i; cbn; lia.
+    Qed.
+    
   End InContext.
 
   Section ContextEquivalence.
@@ -197,8 +281,6 @@ Section Contexts.
     | EmptyCtxtEquiv : ctxt_equiv EmptyCtxt EmptyCtxt
     | VarExtEquiv: forall {Γ Δ : Ctxt} (m : mod) (τ : type), ctxt_equiv Γ Δ -> ctxt_equiv (VarExt Γ m τ) (VarExt Δ m τ)
     | LockExtEquiv : forall {Γ Δ : Ctxt} (m : mod), ctxt_equiv Γ Δ -> ctxt_equiv (LockExt Γ m) (LockExt Δ m)
-    (* | VarSwapEquiv : forall {Γ Δ : Ctxt} (m1 m2 : mod) (τ1 τ2 : type), *)
-    (*     ctxt_equiv Γ Δ -> ctxt_equiv (VarExt (VarExt Γ m1 τ1) m2 τ2) (VarExt (VarExt Δ m2 τ2) m1 τ1) *)
     | LockCollapseEquiv : forall {Γ Δ : Ctxt} (m1 m2 : mod),
         ctxt_equiv Γ Δ -> ctxt_equiv (LockExt (LockExt Γ m1) m2) (LockExt Δ (mod_app m1 m2))
     | LockSplitEquiv : forall {Γ Δ : Ctxt} (m1 m2 : mod),
@@ -263,6 +345,52 @@ Section Contexts.
           | [ IH : all_locks ?Γ = all_locks ?Δ |- context[all_locks ?Γ]] => rewrite IH
           end; rewrite mod_app_assoc; reflexivity.
     Qed.
+
+    Lemma lock_location_proper : forall {Γ Δ} m, ctxt_equiv Γ Δ -> lock_location Γ m = lock_location Δ m.
+    Proof using.
+      intros Γ Δ m eqv; revert m; induction eqv; intro m'; cbn;
+      repeat match goal with
+        | [ |- ?a = ?a ] => reflexivity
+        | [ H : ?P |- ?P ] => exact P
+        | [ H1 : ?P, H2 : ~ ?P |- _ ] => destruct (H2 H1)
+             (* | [ |- context[lock_location ?Γ ?m]] => *)
+             (*     lazymatch goal with *)
+             (*     | [ |- lock_location Γ m = _ ] => fail *)
+             (*     | [ |- _ = lock_location Γ m ] => fail *)
+             (*     | [ H : lock_location Γ m = _ |- _ ] => rewrite H *)
+             (*     | _ => let eq := fresh "eq" in destruct (lock_location Γ m) eqn:eq *)
+                                 (*     end *)
+        | [ H : context[mod_app ?m1 (mod_app ?m2 ?m3)] |- _ ] =>
+            rewrite <- mod_app_assoc in H
+        | [ H1 : PrefixOf ?m1 ?m2, H2 : context[mod_app ?m2 ?m3] |- _ ] =>
+            lazymatch goal with
+            | [_ : PrefixOf m1 (mod_app m2 m3) |- _ ] => fail
+            | _ => assert (PrefixOf m1 (mod_app m2 m3))
+                by (transitivity m2; [exact H1 | apply PrefixOf_app ])
+            end
+        | [ H1 : PrefixOf ?m1 ?m2 |- context[mod_app ?m2 ?m3]] =>
+            lazymatch goal with
+            | [_ : PrefixOf m1 (mod_app m2 m3) |- _ ] => fail
+            | _ => assert (PrefixOf m1 (mod_app m2 m3))
+                by (transitivity m2; [exact H1 | apply PrefixOf_app ])
+            end
+        | [ H : ctxt_equiv ?Γ ?Δ |- context[all_locks ?Γ]] =>
+            rewrite (all_locks_proper H)
+        | [ IH : forall m, lock_location ?Γ m = lock_location Δ m |- context[lock_location ?Γ ?m]] => rewrite (IH m)
+        | [ |- context[prefixb ?m1 ?m2]] =>
+            lazymatch goal with
+            | [H : prefixb m1 m2 = _ |- _ ] => rewrite H
+            | [H : PrefixOf m1 m2 |- _ ] => rewrite (PrefixOf_prefixb H)
+            | [H : ~ PrefixOf m1 m2 |- _ ] => rewrite (not_PrefixOf_prefixb H)
+            | _ => let eq := fresh "eq" in
+                  destruct (prefixb m1 m2) eqn:eq;
+                  [pose proof (prefixb_PrefixOf eq) | pose proof (prefixb_not_PrefixOf eq)]
+            end 
+        end.
+      2: symmetry.
+      1,2: apply lock_location_None; assumption.
+      transitivity (lock_location Δ m'); auto.
+    Qed.      
 
     Lemma InCtxt_proper' : forall {Γ Δ}, ctxt_equiv Γ Δ -> forall n m τ m', InCtxt n m τ m' Γ -> InCtxt n m τ m' Δ.
     Proof using.
@@ -593,6 +721,19 @@ Section Contexts.
       apply BaseLockNonVar. apply IHΓ. inversion etd; subst; auto.
     Qed.
 
+    Lemma EmptoidLockLocation : forall {Γ : Ctxt} {m : mod} {i : nat},
+        Emptoid Γ ->
+        lock_location Γ m = Some i ->
+        m = base /\ i = 0.
+    Proof using.
+      intros Γ m i eqv; revert m i; induction eqv; intros m' i eqi; cbn in *.
+      - destruct m'; inversion eqi; subst; auto.
+      - destruct (prefixb m' (all_locks Γ)) eqn:pfx; [| inversion eqi].
+        apply IHeqv; auto.
+    Qed.
+
+    
+    
   End Emptoid.
 
   Section Varoid.
@@ -649,29 +790,29 @@ Section Contexts.
   Section ContextLeq.
 
     Inductive ctxt_leq : Ctxt -> renaming -> Ctxt -> Prop :=
-    | EmptyCtxtLeq'' {ξ : renaming} :
+    | EmptyCtxtLeq {ξ : renaming} :
       (forall n, ξ n = n) -> 
       ctxt_leq EmptyCtxt ξ EmptyCtxt
-    | VarExtLeq'' : forall {Γ Δ : Ctxt} {ξ1 ξ2 : renaming} (m : mod) (τ : type),
+    | VarExtLeq : forall {Γ Δ : Ctxt} {ξ1 ξ2 : renaming} (m : mod) (τ : type),
         (forall n, ξ2 n = renup ξ1 n) -> 
         ctxt_leq Γ ξ1 Δ ->
         ctxt_leq (VarExt Γ m τ) ξ2 (VarExt Δ m τ)
-    | LockExtLeq'' : forall {Γ Δ : Ctxt} {ξ : renaming} (m : mod),
+    | LockExtLeq : forall {Γ Δ : Ctxt} {ξ : renaming} (m : mod),
         ctxt_leq Γ ξ Δ ->
         ctxt_leq (LockExt Γ m) ξ (LockExt Δ m)
-    | VarAddLeq'' : forall {Γ Δ : Ctxt} {ξ1 ξ2 : renaming} (m : mod) (τ : type),
+    | VarAddLeq : forall {Γ Δ : Ctxt} {ξ1 ξ2 : renaming} (m : mod) (τ : type),
         ctxt_leq Γ ξ1 Δ ->
         (forall n, ξ2 n = S (ξ1 n)) ->
         ctxt_leq Γ ξ2 (VarExt Δ m τ)
-    | VarSwapLeq'' : forall (Γ : Ctxt) (m1 m2 : mod) (τ1 τ2 : type) (ξ : renaming),
+    | VarSwapLeq : forall (Γ : Ctxt) (m1 m2 : mod) (τ1 τ2 : type) (ξ : renaming),
         (ξ 0 = 1) ->
         (ξ 1 = 0) ->
         (forall n, ξ (S (S n)) = S (S n)) ->
         ctxt_leq (VarExt (VarExt Γ m1 τ1) m2 τ2) ξ (VarExt (VarExt Γ m2 τ2) m1 τ1)
-    | LockCollapseLeq'' : forall (Γ : Ctxt) (ξ : renaming) (m1 m2 : mod),
+    | LockCollapseLeq : forall (Γ : Ctxt) (ξ : renaming) (m1 m2 : mod),
         (forall n, ξ n = n) ->
         ctxt_leq (LockExt (LockExt Γ m1) m2) ξ (LockExt Γ (mod_app m1 m2))
-    | LockSplitLeq'' : forall (Γ : Ctxt) (ξ : renaming) (m1 m2 : mod),
+    | LockSplitLeq : forall (Γ : Ctxt) (ξ : renaming) (m1 m2 : mod),
         (forall n, ξ n = n) ->
         ctxt_leq (LockExt Γ (mod_app m1 m2)) ξ (LockExt (LockExt Γ m1) m2)
     | LockNothingLeq1'' : forall (Γ : Ctxt) (ξ : renaming),
@@ -680,7 +821,7 @@ Section Contexts.
     | LockNothingLeq2'' : forall (Γ : Ctxt) (ξ : renaming),
         (forall n, ξ n = n) ->
         ctxt_leq (LockExt Γ base) ξ Γ
-    | CtxtLeq''Trans : forall {Γ Δ E : Ctxt} {ξ1 ξ2 : renaming} (ξ3 : renaming),
+    | CtxtLeqTrans : forall {Γ Δ E : Ctxt} {ξ1 ξ2 : renaming} (ξ3 : renaming),
         (forall n, ξ3 n = ξ2 (ξ1 n)) -> 
         ctxt_leq Γ ξ1 Δ ->
         ctxt_leq Δ ξ2 E ->
@@ -693,25 +834,25 @@ Section Contexts.
     Proof using.
       intros Γ Δ ξ1 ξ2 ext_eq lq; revert ξ2 ext_eq; induction lq; intros ξ1' ext_eq;
         try (econstructor; eauto; fail).
-      - apply EmptyCtxtLeq''. intro n. rewrite <- ext_eq. apply H0.
-      - apply @VarExtLeq'' with (ξ1 := ξ1); auto.
+      - apply EmptyCtxtLeq. intro n. rewrite <- ext_eq. apply H0.
+      - apply @VarExtLeq with (ξ1 := ξ1); auto.
         intro n. rewrite <- ext_eq. apply H0.
-      - apply @VarAddLeq'' with (ξ1 := ξ1); auto.
+      - apply @VarAddLeq with (ξ1 := ξ1); auto.
         intro n; rewrite <- ext_eq; apply H0.
-      - apply VarSwapLeq''. 3 : intro n. all: rewrite <- ext_eq; auto.
-      - apply LockCollapseLeq''; intro n; transitivity (ξ n); auto.
-      - apply LockSplitLeq''; intro n; transitivity (ξ n); auto.
+      - apply VarSwapLeq. 3 : intro n. all: rewrite <- ext_eq; auto.
+      - apply LockCollapseLeq; intro n; transitivity (ξ n); auto.
+      - apply LockSplitLeq; intro n; transitivity (ξ n); auto.
       - apply LockNothingLeq1''; intro n; transitivity (ξ n); auto.
       - apply LockNothingLeq2''; intro n; transitivity (ξ n); auto.
-      - apply @CtxtLeq''Trans with (ξ2 := ξ2) (ξ1 := ξ1) (Δ := Δ); auto.
+      - apply @CtxtLeqTrans with (ξ2 := ξ2) (ξ1 := ξ1) (Δ := Δ); auto.
         intro n; transitivity (ξ3 n); auto.
     Qed.
 
     Fixpoint ctxt_leq_refl (Γ : Ctxt) : ctxt_leq Γ id_renaming Γ :=
       match Γ with
-      | EmptyCtxt => EmptyCtxtLeq'' (fun n => eq_refl)
-      | VarExt Γ m τ => @VarExtLeq'' Γ Γ id_renaming id_renaming m τ (fun n => eq_sym (renup_id n)) (ctxt_leq_refl Γ)
-      | LockExt Γ m => @LockExtLeq'' Γ Γ id_renaming m (ctxt_leq_refl Γ)
+      | EmptyCtxt => EmptyCtxtLeq (fun n => eq_refl)
+      | VarExt Γ m τ => @VarExtLeq Γ Γ id_renaming id_renaming m τ (fun n => eq_sym (renup_id n)) (ctxt_leq_refl Γ)
+      | LockExt Γ m => @LockExtLeq Γ Γ id_renaming m (ctxt_leq_refl Γ)
       end.
 
     Theorem ctxt_leq_numvars: forall Γ Δ ξ,
@@ -721,10 +862,220 @@ Section Contexts.
       intros Γ Δ ξ lq; induction lq; cbn; try lia.
     Qed.
     
+    Theorem ctxt_leq_all_locks : forall {Γ Δ : Ctxt} {ξ : renaming},
+        ctxt_leq Γ ξ Δ -> all_locks Γ = all_locks Δ.
+    Proof using.
+      intros Γ Δ ξ lq; induction lq; cbn; auto.
+      - rewrite IHlq; reflexivity.
+      - apply mod_app_assoc.
+      - symmetry; apply mod_app_assoc.
+      - transitivity (all_locks Δ); assumption.
+    Qed.
+
+    Theorem ctxt_leq_locks : forall {Γ Δ : Ctxt} {ξ : renaming},
+        ctxt_leq Γ ξ Δ ->
+        forall n, locks Γ n = locks Δ (ξ n).
+    Proof using.
+      intros Γ Δ ξ lq; induction lq; intro n; cbn; auto.
+      - destruct n; rewrite H0; cbn; auto.
+      - rewrite <- IHlq. destruct (locks Γ n); auto.
+      - rewrite H0; auto.
+      - destruct n. rewrite H0; reflexivity. destruct n. rewrite H1; reflexivity.
+        rewrite H2; reflexivity.
+      - rewrite H0. destruct (locks Γ n); [rewrite mod_app_assoc|]; reflexivity.
+      - rewrite H0. destruct (locks Γ n); [rewrite mod_app_assoc|]; reflexivity.
+      - rewrite H0. destruct (locks Γ n); reflexivity.
+      - rewrite H0. destruct (locks Γ n); reflexivity.
+      - rewrite IHlq1. rewrite IHlq2. rewrite H0. reflexivity.
+    Qed.
+
+    Lemma ctxt_leq_below_lock_exists : forall {Γ Δ : Ctxt} {ξ : renaming},
+        ctxt_leq Γ ξ Δ ->
+        forall m k,
+          lock_location Δ m = Some k ->
+          exists k', lock_location Γ m = Some k'.
+    Proof using.
+      intros Γ Δ ξ lq; induction lq; intros m' k eq; cbn in *;
+        repeat match goal with
+          | [ |- exists k, Some ?a = Some k ] => exists a; reflexivity
+          | [ H : Some ?a = None |- _ ] => inversion H
+          | [ H : None = Some ?a |- _ ] => inversion H
+          | [ H : Some ?a = Some ?b |- _ ] =>
+              inversion H; subst; clear H
+          | [ IH : forall m k, lock_location ?Δ m = Some k -> exists k', lock_location ?Γ m = Some k',
+                H : context[lock_location ?Δ ?m] |- _] =>
+              lazymatch goal with
+              | [ _ : lock_location Γ m = _ |- _] => fail
+              | [ H : lock_location Δ m = None |- _] => fail
+              | [ H : lock_location Δ m = Some ?k |- _] =>
+                  destruct (IH m k H)
+              | _ =>
+                  let H' := fresh in
+                  destruct (lock_location Δ m) eqn: H';
+                  cbn in H;
+                  lazymatch goal with
+                  | [ H : lock_location Δ m = Some ?k |- _] =>
+                      destruct (IH m k H)
+                  | _ => idtac
+                  end 
+              end
+          | [ H : lock_location ?Γ ?m = Some _ |- context[lock_location ?Γ ?m]] => rewrite H
+          | [ H : lock_location ?Γ ?m = None |- context[lock_location ?Γ ?m]] => rewrite H
+          | [ H : context [prefixb ?m ?Γ] |- _ ] =>
+              lazymatch type of H with
+              | prefixb m Γ = _ => fail
+              | _ =>
+                  lazymatch goal with
+                  | [ H' : prefixb m Γ = _ |- _ ] => rewrite H' in H
+                  | _ =>
+                      let H' := fresh "eq" in
+                      destruct (prefixb m Γ) eqn: H'
+                  end
+              end
+          end.
+      - destruct m'; inversion eq; subst; clear eq. exists 0; reflexivity.
+      - rewrite (ctxt_leq_all_locks lq); rewrite eq0; exists x; reflexivity.
+      - rewrite (ctxt_leq_all_locks lq); rewrite eq0; rewrite eq1; exists 0; reflexivity.
+      - rewrite (ctxt_leq_all_locks lq); rewrite eq0; rewrite eq1; exists 0; reflexivity.
+      - destruct (lock_location Γ m') eqn:eq'; inversion eq; subst; clear eq.
+        eexists; reflexivity.
+      - apply prefixb_PrefixOf in eq0.
+        assert (PrefixOf m' (mod_app (all_locks Γ) m1)) as H1
+            by (transitivity (all_locks Γ); [assumption | apply PrefixOf_app]).
+        apply PrefixOf_prefixb in H1. rewrite H1. eexists; reflexivity.
+      - destruct (prefixb m' (mod_app (all_locks Γ) m1)) eqn:eq2.
+        eexists; reflexivity.
+        rewrite mod_app_assoc. rewrite eq1. eexists; eauto.
+      - rewrite <- mod_app_assoc.
+        assert (PrefixOf m' (mod_app (mod_app (all_locks Γ) m1) m2)) as H1
+            by (transitivity (mod_app (all_locks Γ) m1);
+                [apply prefixb_PrefixOf; assumption | apply PrefixOf_app]).
+        apply PrefixOf_prefixb in H1. rewrite H1. eexists; reflexivity.
+      - assert (~ PrefixOf m' (all_locks Γ)) as H1
+            by (apply prefixb_not_PrefixOf in eq0;
+                intro H1; apply eq0; transitivity (all_locks Γ); [assumption | apply PrefixOf_app]).
+        apply not_PrefixOf_prefixb in H1. rewrite H1.
+        rewrite <- mod_app_assoc. rewrite eq1. eexists; reflexivity.
+      - pose proof (lock_location_prefix eq). rewrite (PrefixOf_prefixb H1). eexists; reflexivity.
+    Qed.
+    
+    Theorem ctxt_leq_below_lock' : forall {Γ Δ : Ctxt} {ξ : renaming},
+        ctxt_leq Γ ξ Δ ->
+        forall n m k,
+          lock_location Δ m = Some k ->
+          ξ n < k ->
+          exists k', lock_location Γ m = Some k' /\ n < k'.
+    Proof using.
+      intros Γ Δ ξ lq; induction lq; intros n m' k eq xi_n_lt_k; cbn in eq; cbn;
+                repeat match goal with
+          | [ |- exists k, Some ?a = Some k ] => exists a; reflexivity
+          | [ H : Some ?a = None |- _ ] => inversion H
+                  | [ H : None = Some ?a |- _ ] => inversion H
+                  | [ H : ?a < 0 |- _ ] => inversion H
+          | [ H : Some ?a = Some ?b |- _ ] =>
+              inversion H; subst; clear H
+          | [ IH : forall m k, lock_location ?Δ m = Some k -> exists k', lock_location ?Γ m = Some k',
+                H : context[lock_location ?Δ ?m] |- _] =>
+              lazymatch goal with
+              | [ _ : lock_location Γ m = _ |- _] => fail
+              | [ H : lock_location Δ m = None |- _] => fail
+              | [ H : lock_location Δ m = Some ?k |- _] =>
+                  destruct (IH m k H)
+              | _ =>
+                  let H' := fresh in
+                  destruct (lock_location Δ m) eqn: H';
+                  cbn in H;
+                  lazymatch goal with
+                  | [ H : lock_location Δ m = Some ?k |- _] =>
+                      destruct (IH m k H)
+                  | _ => idtac
+                  end 
+              end
+          | [ H : lock_location ?Γ ?m = Some _ |- context[lock_location ?Γ ?m]] => rewrite H
+          | [ H : lock_location ?Γ ?m = None |- context[lock_location ?Γ ?m]] => rewrite H
+          | [ H : context [prefixb ?m ?Γ] |- _ ] =>
+              lazymatch type of H with
+              | prefixb m Γ = _ => fail
+              | _ =>
+                  lazymatch goal with
+                  | [ H' : prefixb m Γ = _ |- _ ] => rewrite H' in H
+                  | _ =>
+                      let H' := fresh "eq" in
+                      destruct (prefixb m Γ) eqn: H'
+                  end
+              end
+          end.
+      - rewrite H0 in xi_n_lt_k; destruct m'; inversion eq; subst; clear eq.
+        inversion xi_n_lt_k.
+      - destruct (lock_location Δ m') eqn:eqΔ; inversion eq; subst; clear eq.
+        rewrite H0 in xi_n_lt_k.
+        destruct n; cbn in xi_n_lt_k.
+        destruct (ctxt_leq_below_lock_exists lq m' n0 eqΔ). rewrite H1.
+        eexists; split; [reflexivity| lia].
+        rewrite <- PeanoNat.Nat.succ_lt_mono in xi_n_lt_k.
+        destruct (IHlq n m' n0 eqΔ xi_n_lt_k) as [x [H1 H2]].
+        rewrite H1. exists (S x); split; [reflexivity| rewrite <- PeanoNat.Nat.succ_lt_mono; assumption].
+      - rewrite (ctxt_leq_all_locks lq); rewrite eq0.
+        destruct (IHlq n m' k eq xi_n_lt_k) as [k' [eq' lt']].
+        eexists; split; eassumption.
+      (* - rewrite (ctxt_leq_all_locks lq); rewrite eq0; rewrite eq1. *)
+      (*   inversion xi_n_lt_k. *)
+      - destruct (lock_location Δ m') eqn:eq'; inversion eq; subst; clear eq.
+        rewrite H0 in xi_n_lt_k; rewrite <- PeanoNat.Nat.succ_lt_mono in xi_n_lt_k.
+        apply IHlq with (k := n0); auto.
+      - destruct (lock_location Γ m') eqn:eq'; inversion eq; subst; clear eq.
+        eexists; split; [reflexivity |].
+        destruct n. lia. destruct n; try lia. rewrite H2 in xi_n_lt_k. assumption.
+      - assert (PrefixOf m' (mod_app (all_locks Γ) m1)) as pfx
+            by (transitivity (all_locks Γ); [apply prefixb_PrefixOf; assumption| apply PrefixOf_app]).
+        rewrite (PrefixOf_prefixb pfx). rewrite H0 in xi_n_lt_k.
+        eexists; split; [reflexivity | assumption].
+      - rewrite H0 in xi_n_lt_k; destruct (prefixb m' (mod_app (all_locks Γ) m1)) eqn:eq2;
+          eexists; split; eauto.
+      - rewrite H0 in xi_n_lt_k; eexists; split; eauto.
+      - rewrite (PrefixOf_prefixb (lock_location_prefix eq)). rewrite H0 in xi_n_lt_k.
+        eexists; split; eauto.
+      - rewrite H0 in xi_n_lt_k. destruct (IHlq2 (ξ1 n) m' k eq xi_n_lt_k) as [k' [eqΔ ltk']].
+        apply IHlq1 with (k := k'); auto.
+    Qed.
+
+    Theorem ctxt_leq_below_lock'' : forall {Γ Δ : Ctxt} {ξ : renaming},
+        ctxt_leq Γ ξ Δ ->
+        forall n m k k',
+          lock_location Δ m = Some k ->
+          lock_location Γ m = Some k' ->
+          k' <= n ->
+          k <= ξ n.
+    Proof using.
+      intros Γ Δ ξ H0 n m k k' H1 H2 H3.
+      destruct (Compare_dec.le_gt_dec k (ξ n)); auto.
+      destruct (ctxt_leq_below_lock' H0 n m k H1 ltac:(lia)) as [k'' [eq n_lt_k'']].
+      rewrite H2 in eq; inversion eq; subst; clear eq. lia.
+    Qed.      
+    
     Hint Constructors Ctxt : ctxts.
     Hint Constructors ctxt_equiv : ctxts.
     Hint Constructors ctxt_leq : ctxts.
     
+    Lemma Inctxt_leq : forall {Γ Δ : Ctxt} {ξ : renaming} (lq : ctxt_leq Γ ξ Δ),
+      forall n m1 τ m2, InCtxt n m1 τ m2 Γ -> InCtxt (ξ n) m1 τ m2 Δ.
+    Proof using.
+      intros Γ Δ ξ lq; induction lq; try rename τ into τ'; try rename m1 into m1'; try rename m2 into m2'; intros n m1 τ m2 i; cbn; try rewrite H0; try (inversion i; subst; constructor; auto; fail).
+      - inversion i; subst. rewrite H0; repeat (constructor; auto).
+        inversion i0; subst. rewrite H1; constructor; auto.
+        rewrite H2; repeat constructor; auto.
+      - inversion i; subst.
+        inversion i0; subst.
+        rewrite mod_app_assoc. constructor; auto.
+      - inversion i; subst.
+        rewrite <- mod_app_assoc. repeat constructor; auto.
+      - assert (m2 = mod_app m2 base) as H1 by reflexivity.
+        rewrite H1; constructor; auto.
+      - assert (m2 = mod_app m2 base) as H1 by reflexivity.
+        rewrite H1 in i. inversion i; subst.
+        cbn in *; subst. assumption.
+      - apply IHlq1 in i. apply IHlq2 in i. exact i.
+    Qed.
 
     Fixpoint CtxtRemove (Γ : Ctxt) (n : nat) : Ctxt :=
       match Γ with
@@ -751,27 +1102,22 @@ Section Contexts.
 
 
   Section LockChanges.
-
     Fixpoint change_lock_after (Γ : Ctxt) (m : mod) (p q : PName) : option Ctxt :=
       match Γ with
       | EmptyCtxt => None
       | VarExt Γ m' τ =>
           match change_lock_after Γ m p q with
-          | Some Δ => Some (VarExt Δ m' τ)
+          | Some Δ => Some (VarExt Δ base UnitT)
           | None => None
           end
       | LockExt Γ m' =>
           if prefixb (cons m p) (all_locks Γ)
-          then match change_lock_after Γ m p q with
-               | Some Δ => Some (LockExt Δ m')
-               | None => None
-               end
+          then change_lock_after Γ m p q 
           else match remove_Prefix (all_locks Γ) m with
                | None => None
-               | Some m'' => match change_prefix (cons m'' p) m' (cons m'' q) with
-                             | None => None
-                             | Some m''' => Some (LockExt Γ m''')
-                             end
+               | Some m'' => if prefixb (cons m'' p) m'
+                            then Some (LockExt Γ (cons m'' q))
+                            else None
                end
       end.
     
@@ -780,21 +1126,17 @@ Section Contexts.
       | EmptyCtxt => None
       | VarExt Γ m' τ =>
           match remove_lock_after Γ m p with
-          | Some Δ => Some (VarExt Δ m' τ)
+          | Some Δ => Some (VarExt Δ base UnitT)
           | None => None
           end
       | LockExt Γ m' =>
           if prefixb (cons m p) (all_locks Γ)
-          then match remove_lock_after Γ m p with
-               | Some Δ => Some (LockExt Δ m')
-               | None => None
-               end
+          then remove_lock_after Γ m p
           else match remove_Prefix (all_locks Γ) m with
                | None => None
-               | Some m'' => match change_prefix (cons m'' p) m' m'' with 
-                             | None => None
-                             | Some m''' => Some (LockExt Γ m''')
-                             end
+               | Some m'' => if prefixb (cons m'' p) m'
+                            then Some (LockExt Γ m'')
+                            else None
                end
       end.
 
@@ -806,24 +1148,97 @@ Section Contexts.
           else None
       | VarExt Γ m' τ =>
           match add_lock_after Γ m p with
-          | Some Δ => Some (VarExt Δ m' τ)
+          | Some Δ => Some (VarExt Δ base UnitT)
           | None => None
           end
       | LockExt Γ m' =>
           if prefixb m (all_locks Γ)
-          then match add_lock_after Γ m p with
-               | Some Δ => Some (LockExt Δ m')
-               | None => None
-               end
+          then add_lock_after Γ m p
           else match remove_Prefix (all_locks Γ) m with
                | None => None
-               | Some m'' => match change_prefix m'' m' (cons m'' p) with
-                             | None => None
-                             | Some m''' => Some (LockExt Γ m''')
-                             end
+               | Some m'' => if prefixb m'' m'
+                            then Some (LockExt Γ (cons m'' p))
+                            else None
                end
       end.
 
+    Theorem change_lock_vars : forall {Γ Δ : Ctxt} {m1 : mod} {p q : PName} {m2 : mod} {τ : type} {n m : nat},
+        lock_location Γ (cons m1 p) = Some m ->
+        m <= n ->
+        vars Γ n = Some (m2, τ) ->
+        change_lock_after Γ m1 p q = Some Δ ->
+        vars Δ n = Some (m2, τ).
+    Proof using.
+      intro Γ; induction Γ; intros Δ m1 p q m2 τ n m' m'eq m'len vseq Δeq; cbn in *;
+        repeat match goal with
+          | [ H : ?P |- ?P ] => exact H
+          | [ H : Some _ = None |- _ ] => inversion H
+          | [ H : None = Some _ |- _ ] => inversion H
+          end; auto.
+      - destruct (lock_location Γ (cons m1 p)) eqn:m'eq';
+          inversion m'eq; subst; clear m'eq.
+        destruct (change_lock_after Γ m1 p q) eqn:Δeq'; inversion Δeq; subst;
+          destruct n; [inversion m'len|].
+        cbn.
+        apply le_S_n in m'len.
+        eapply IHΓ; eauto.
+      - destruct (prefixb (cons m1 p) (all_locks Γ)) eqn:eq_pfx1;
+          [eapply IHΓ; eauto|].
+        destruct (prefixb (cons m1 p) (mod_app (all_locks Γ) m)) eqn:eq_pfx2;
+          inversion m'eq; subst; clear m'eq.
+        pose proof (extended_suffix_prefix (prefixb_PrefixOf eq_pfx2) (prefixb_not_PrefixOf eq_pfx1)).
+        inversion H0; subst.
+        rewrite H3 in eq_pfx1. apply prefixb_not_PrefixOf in eq_pfx1.
+        exfalso; apply eq_pfx1; reflexivity.
+        destruct (prefix_remove_Some pf) as [m'' eq_m''].
+        rewrite eq_m'' in Δeq.
+        destruct (prefixb (cons m'' p) m) eqn:eq_pfx3; inversion Δeq; subst.
+        cbn; assumption.
+    Qed.
+
+    Theorem remove_lock_vars : forall {Γ Δ : Ctxt} {m1 : mod} {p : PName} {m2 : mod} {τ : type} {n m : nat},
+        lock_location Γ (cons m1 p) = Some m ->
+        m <= n ->
+        vars Γ n = Some (m2, τ) ->
+        remove_lock_after Γ m1 p = Some Δ ->
+        vars Δ n = Some (m2, τ).
+    Proof using.
+      intro Γ; induction Γ; intros Δ m1 p m2 τ i j eq m'len vseq Δeq; cbn in *;
+        repeat match goal with
+          | [ H : ?P |- ?P ] => exact H
+          | [ H : None = Some _ |- _ ] => inversion H
+          end; auto.
+      - destruct (lock_location Γ (cons m1 p)) eqn:eq'; inversion eq; subst; clear eq; rename eq' into eq.
+        destruct (remove_lock_after Γ m1 p) as [Δ'|] eqn:Δeq'; inversion Δeq; subst; clear Δeq;
+          rename Δeq' into Δeq; rename Δ' into Δ.
+        cbn; destruct i; [inversion m'len |].
+        eapply IHΓ; eauto; lia.
+      - destruct (prefixb (cons m1 p) (all_locks Γ)) eqn:pfx; [eapply IHΓ; eauto|].
+        destruct (remove_Prefix (all_locks Γ) m1) as [m3|] eqn:eqm3; [| inversion Δeq].
+        destruct (prefixb (cons m3 p) m); inversion Δeq; subst.
+        cbn; assumption.
+    Qed.
+        
+    Theorem add_lock_vars : forall {Γ Δ : Ctxt} {m1 : mod} {p : PName} {m2 : mod} {τ : type} {n m : nat},
+        lock_location Γ m1 = Some m ->
+        m <= n ->
+        vars Γ n = Some (m2, τ) ->
+        add_lock_after Γ m1 p = Some Δ ->
+        vars Δ n = Some (m2, τ).
+    Proof using.
+      intro Γ; induction Γ; intros Δ m1 p m2 τ i j eq jeq veq Δeq; cbn in *.
+      - inversion veq.
+      - destruct (lock_location Γ m1) eqn:eq'; inversion eq; subst; clear eq; rename eq' into eq.
+        destruct (add_lock_after Γ m1 p) as [Δ'|] eqn:Δeq'; inversion Δeq; subst; clear Δeq;
+          rename Δ' into Δ; rename Δeq' into Δeq.
+        cbn; destruct i; inversion veq; subst. inversion jeq.
+        rewrite H1; eapply IHΓ; eauto; lia.
+      - destruct (prefixb m1 (all_locks Γ)) eqn:pfx. eapply IHΓ; eauto.
+        destruct (remove_Prefix (all_locks Γ) m1) as [m3|] eqn:eqm3; [| inversion Δeq].
+        destruct (prefixb m3 m) eqn:pfx'; inversion Δeq; subst; clear Δeq.
+        cbn; assumption.
+    Qed.
+    
     Theorem change_lock_after_defined : forall {Γ : Ctxt} {m : mod} {p q : PName},
         PrefixOf (cons m p) (all_locks Γ) ->
         exists (Δ : Ctxt), change_lock_after Γ m p q = Some Δ.
@@ -844,13 +1259,13 @@ Section Contexts.
                        exfalso; apply H1; rewrite H2; reflexivity
                    end).
            destruct (prefix_remove_Some pfx'') as [m'' eqm'']; rewrite eqm''.
-           pose proof (readd_remove_prefix eqm'').
-           destruct (PrefixOf_peel pfx) as [m''' eqm'''].
-           rewrite <- H0 in eqm'''.
-           assert (cons (mod_app (all_locks Γ) m'') p = mod_app (all_locks Γ) (cons m'' p)) as H1 by reflexivity; rewrite H1 in eqm'''; clear H1.
-           rewrite mod_app_assoc in eqm'''. apply mod_app_inj in eqm'''.
-           subst.
-           rewrite change_mod_app. eexists; auto.
+           pose proof (remove_Some_prefix eqm'').
+           destruct (PrefixOf_peel H0) as [m2 eqm2]; subst.
+           rewrite remove_app in eqm''; inversion eqm''; subst.
+           assert (cons (mod_app (all_locks Γ) m'') p = mod_app (all_locks Γ) (cons m'' p)) as H1 by reflexivity; rewrite H1 in pfx; clear H1.
+           apply mod_app_prefix in pfx.
+           rewrite (PrefixOf_prefixb pfx).
+           eexists; eauto.
     Qed.
 
     Theorem remove_lock_after_defined : forall {Γ : Ctxt} {m : mod} {p : PName},
@@ -861,8 +1276,7 @@ Section Contexts.
       - destruct (IHΓ m_pre p pfx) as [Δ Δeq]; rewrite Δeq.
         eexists; auto.
       - destruct (prefixb (cons m_pre p) (all_locks Γ)) eqn:eq_pre.
-        -- destruct (IHΓ m_pre p (prefixb_PrefixOf eq_pre)) as [Δ Δeq]; rewrite Δeq.
-           eexists; auto.
+        -- apply IHΓ; apply prefixb_PrefixOf; assumption.
         -- assert (~ PrefixOf (cons m_pre p) (all_locks Γ)) as npfx
                by (intro pfx'; apply PrefixOf_prefixb in pfx'; rewrite pfx' in eq_pre; inversion eq_pre).
            pose (pfx' := extended_suffix_prefix pfx npfx).
@@ -881,8 +1295,8 @@ Section Contexts.
                by (transitivity (mod_app (mod_app (all_locks Γ) (cons m' p)) m'');
                    [cbn; exact eqm'' | apply mod_app_assoc]).
            apply mod_app_inj in eq''. rewrite eq''.
-           rewrite change_mod_app.
-           eexists; auto.
+           rewrite (PrefixOf_prefixb (PrefixOf_app (cons m' p) m'')).
+           eexists; reflexivity.
     Qed.
 
     Theorem add_lock_after_defined : forall {Γ : Ctxt} {m : mod} {p : PName},
@@ -902,7 +1316,8 @@ Section Contexts.
            pose proof (readd_remove_prefix eqm'') as H0; rewrite <- H0 in eqm'''.
            rewrite mod_app_assoc in eqm'''. apply mod_app_inj in eqm'''.
            subst.
-           rewrite change_mod_app. eexists; eauto.
+           rewrite (PrefixOf_prefixb (PrefixOf_app m'' m''')).
+           eexists; reflexivity.
     Qed.
 
     Theorem change_lock_after_prefix : forall {Γ Δ : Ctxt} {m : mod} {p q : PName},
@@ -917,13 +1332,14 @@ Section Contexts.
         -- pose proof (prefixb_PrefixOf eq_pfx) as pfx.
            destruct (change_lock_after Γ m p q) eqn:eq'; inversion eq; subst; clear eq; rename eq' into eq.
            transitivity (all_locks Γ); [assumption | apply PrefixOf_app].
-        -- destruct (remove_Prefix (all_locks Γ) m) eqn: eq'; [| inversion eq].
-           destruct (change_prefix (cons m0 p) m' (cons m0 q)) eqn:eq''; inversion eq; subst; clear eq.
-           destruct (change_prefix_to_app eq'') as [m'' [eqm' eqm1]]; subst.
-           pose proof (readd_remove_prefix eq'); subst.
-           assert (cons (mod_app (all_locks Γ) m0) p = mod_app (all_locks Γ) (cons m0 p)) as eq
-               by reflexivity; rewrite eq; clear eq.
-           rewrite <- mod_app_assoc. apply PrefixOf_app.
+        -- destruct (remove_Prefix (all_locks Γ) m) eqn: eq'; inversion eq; subst; clear eq.
+           destruct (prefixb (cons m0 p) m') eqn:eq''; inversion H1; subst; clear H1.
+           pose proof (remove_Some_prefix eq') as pfx.
+           destruct (PrefixOf_peel pfx) as [m2 eqm2]; subst.
+           rewrite remove_app in eq'; inversion eq'; subst; clear eq'.
+           assert (cons (mod_app (all_locks Γ) m0) p = mod_app (all_locks Γ) (cons m0 p))
+             as H0 by reflexivity; rewrite H0; clear H0.
+           apply mod_app_mono_l. apply prefixb_PrefixOf; assumption.
     Qed.             
 
     Theorem remove_lock_after_prefix : forall {Γ Δ : Ctxt} {m : mod} {p : PName},
@@ -939,12 +1355,13 @@ Section Contexts.
         -- destruct (remove_lock_after Γ m p) eqn:eq'; [| inversion eq].
            apply IHΓ in eq'; cbn; transitivity (all_locks Γ); [exact eq' | apply PrefixOf_app].
         -- cbn; destruct (remove_Prefix (all_locks Γ) m) eqn:eq_rmv; [| inversion eq].
-           destruct (change_prefix (cons m0 p) m' m0) eqn:eq_chng; [| inversion eq].
-           apply change_prefix_to_app in eq_chng; destruct eq_chng as [m5 [eq_m' eq_m1]].
-           rewrite eq_m'.
-           pose proof (readd_remove_prefix eq_rmv).
-           rewrite <- H0.
-           transitivity (mod_app (all_locks Γ) (cons m0 p)); [reflexivity|].
+           destruct (prefixb (cons m0 p) m') eqn:pfx; inversion eq; subst; clear eq.
+           pose proof (remove_Some_prefix eq_rmv).
+           destruct (PrefixOf_peel H0) as [m2 eqm2]; subst.
+           apply prefixb_PrefixOf in pfx; destruct (PrefixOf_peel pfx) as [m3 eqm3]; subst.
+           rewrite remove_app in eq_rmv; inversion eq_rmv; subst; clear eq_rmv.
+           assert (cons (mod_app (all_locks Γ) m0) p = mod_app (all_locks Γ) (cons m0 p))
+             as H1 by reflexivity; rewrite H1; clear H1.
            apply mod_app_mono_l. apply PrefixOf_app.
     Qed.
 
@@ -957,38 +1374,16 @@ Section Contexts.
       - destruct (add_lock_after Γ m p) eqn:eq'; inversion eq; subst; clear eq; rename eq' into eq.
         apply IHΓ in eq; cbn; assumption.
       - destruct (prefixb m (all_locks Γ)) eqn:eq_pfx.
-        -- destruct (add_lock_after Γ m p) eqn: eq'; inversion eq; subst; clear eq; rename eq' into eq.
-           apply IHΓ in eq. cbn; transitivity (all_locks Γ); [assumption | apply PrefixOf_app].
+        -- cbn. transitivity (all_locks Γ). apply prefixb_PrefixOf; assumption.
+           apply PrefixOf_app.
         -- destruct (remove_Prefix (all_locks Γ) m) eqn:eq_rmv; [| inversion eq].
-           destruct (change_prefix m0 m' (cons m0 p)) eqn:eq_chng; inversion eq; subst; clear eq.
-           pose proof (readd_remove_prefix eq_rmv); subst.
-           destruct (change_prefix_to_app eq_chng) as [m2 [eqm' eqm1]]; subst.
-           cbn; rewrite <- mod_app_assoc; apply PrefixOf_app.
+           destruct (prefixb m0 m') eqn:pfx; inversion eq; subst; clear eq; cbn.
+           pose proof (remove_Some_prefix eq_rmv).
+           destruct (PrefixOf_peel H0) as [m2 eqm2]; subst.
+           apply mod_app_mono_l.
+           rewrite remove_app in eq_rmv; inversion eq_rmv; subst; clear eq_rmv.
+           apply prefixb_PrefixOf; assumption.
     Qed.
-
-    (* Theorem remove_lock_after_all_locks : forall {Γ Δ : Ctxt} {m : mod} {p : PName}, *)
-    (*     remove_lock_after Γ m p = Some Δ -> *)
-    (*     Some (all_locks Δ) = change_prefix (cons m p) (all_locks Γ) m. *)
-    (* Proof using. *)
-    (*   intro Γ; induction Γ; try (rename m into m'); intros Δ m p eq; cbn in eq; *)
-    (*     try (inversion eq; fail). *)
-    (*   - destruct (remove_lock_after Γ m p) eqn: eq'; [| inversion eq]. *)
-    (*     apply IHΓ in eq'. inversion eq; subst; clear eq; cbn. exact eq'. *)
-    (*   - destruct (prefixb (cons m p) (all_locks Γ)) eqn:eq_pfxb. *)
-    (*     -- destruct (remove_lock_after Γ m p) eqn: eq'; inversion eq; subst; clear eq; cbn. *)
-    (*        apply IHΓ in eq'. *)
-    (*        symmetry in eq'. apply change_prefix_to_app in eq'; destruct eq' as [m5 [eq1_m5 eq2_m5]]. *)
-    (*        rewrite eq1_m5; rewrite eq2_m5. *)
-    (*        symmetry. rewrite mod_app_assoc. rewrite change_mod_app. *)
-    (*        rewrite mod_app_assoc; reflexivity. *)
-    (*     -- destruct (remove_Prefix (all_locks Γ) m) eqn:eq_rmv_pfx; [| inversion eq]. *)
-    (*        destruct (change_prefix (cons m0 p) m' m0) eqn:eq_chng_pfx; inversion eq; subst; clear eq; cbn. *)
-    (*        pose proof (readd_remove_prefix eq_rmv_pfx); subst; clear eq_rmv_pfx; cbn. *)
-    (*        destruct (change_prefix_to_app eq_chng_pfx) as [m5 [eq_m51 eq_m52]]; subst. *)
-    (*        assert (mod_app (all_locks Γ) (mod_app (cons m0 p) m5) = mod_app (cons (mod_app (all_locks Γ) m0) p) m5) *)
-    (*          by (rewrite <- mod_app_assoc; cbn; reflexivity); rewrite H0. *)
-    (*        rewrite change_mod_app; rewrite mod_app_assoc; reflexivity. *)
-    (* Qed. *)
 
     Theorem all_locks_prefix_equiv : forall {Γ : Ctxt} {m : mod},
         PrefixOf m (all_locks Γ) ->
@@ -1034,46 +1429,51 @@ Section Contexts.
       transitivity (LockExt Γ0 (mod_app m0 p)); [cbn | apply LockSplitEquiv]; reflexivity.
     Qed.
 
-    Lemma change_lock_after_app : forall {Γ1 Γ2 Δ : Ctxt} {m : mod} {p q : PName},
-        change_lock_after Γ1 m p q = Some Δ ->
-        change_lock_after (ctxt_app Γ1 Γ2) m p q = Some (ctxt_app Δ Γ2).
+    Lemma change_lock_after_num_vars : forall {Γ Δ : Ctxt} {m : mod} {p q : PName},
+        change_lock_after Γ m p q = Some Δ ->
+        num_vars Γ = num_vars Δ.
     Proof using.
-      intros Γ1 Γ2; revert Γ1; induction Γ2 as [| Γ2 IHΓ2 m' τ | Γ2 IHΓ2 m']; intros Γ1 Δ m p q eq; cbn.
-      - exact eq.
-      - rewrite (IHΓ2 Γ1 Δ m p q eq); reflexivity.
-      - pose proof (change_lock_after_prefix eq) as pfx.
-        assert (PrefixOf (cons m p) (all_locks (ctxt_app Γ1 Γ2))) as pfx'
-            by (rewrite ctxt_app_all_locks; transitivity (all_locks Γ1); [assumption | apply PrefixOf_app]).
-        rewrite (PrefixOf_prefixb pfx').
-        rewrite (IHΓ2 Γ1 Δ m p q eq). reflexivity.
+      intros Γ; induction Γ; intros Δ m' p q eqΔ; cbn in *.
+      - inversion eqΔ.
+      - destruct (change_lock_after Γ m' p q) eqn:eq; inversion eqΔ; subst; clear eqΔ.
+        apply IHΓ in eq; cbn; f_equal; assumption.
+      - destruct (prefixb (cons m' p) (all_locks Γ)).
+        -- apply IHΓ in eqΔ; assumption.
+        -- destruct (remove_Prefix (all_locks Γ) m') eqn:eq; [| inversion eqΔ].
+           destruct (prefixb (cons m0 p) m) eqn:eq'; inversion eqΔ; subst; clear eqΔ.
+           cbn; reflexivity.
     Qed.
 
-    Lemma remove_lock_after_app : forall {Γ1 Γ2 Δ : Ctxt} {m : mod} {p : PName},
-        remove_lock_after Γ1 m p = Some Δ ->
-        remove_lock_after (ctxt_app Γ1 Γ2) m p = Some (ctxt_app Δ Γ2).
+    Lemma remove_lock_after_num_vars : forall {Γ Δ : Ctxt} {m : mod} {p : PName},
+        remove_lock_after Γ m p = Some Δ ->
+        num_vars Γ = num_vars Δ.
     Proof using.
-      intros Γ1 Γ2; revert Γ1; induction Γ2; try rename m into m'; intros Γ1 Δ m p eq; cbn.
-      - exact eq.
-      - rewrite (IHΓ2 Γ1 Δ m p eq). reflexivity.
-      - pose proof (remove_lock_after_prefix eq) as pfx1.
-        assert (PrefixOf (cons m p) (all_locks (ctxt_app Γ1 Γ2))) as pfx2
-            by (rewrite ctxt_app_all_locks; transitivity (all_locks Γ1); [exact pfx1 | apply PrefixOf_app]).
-        rewrite (PrefixOf_prefixb pfx2).
-        rewrite (IHΓ2 Γ1 Δ m p eq). reflexivity.
+      intro Γ; induction Γ; intros Δ m' p eqΔ; cbn in *.
+      - inversion eqΔ.
+      - destruct (remove_lock_after Γ m' p) as [Δ'|] eqn:eqΔ'; inversion eqΔ; subst; clear eqΔ;
+          rename eqΔ' into eqΔ; rename Δ' into Δ.
+        cbn; f_equal; eapply IHΓ; exact eqΔ.
+      - destruct (prefixb (cons m' p) (all_locks Γ)) eqn:pfx.
+        -- eapply IHΓ; exact eqΔ.
+        -- destruct (remove_Prefix (all_locks Γ) m') eqn:eq; [| inversion eqΔ].
+           destruct (prefixb (cons m0 p) m) eqn:eq'; inversion eqΔ; subst; clear eqΔ.
+           cbn; reflexivity.
     Qed.
 
-    Lemma add_lock_after_app : forall {Γ1 Γ2 Δ : Ctxt} {m : mod} {p : PName},
-        add_lock_after Γ1 m p = Some Δ ->
-        add_lock_after (ctxt_app Γ1 Γ2) m p = Some (ctxt_app Δ Γ2).
+    Lemma add_lock_after_num_vars : forall {Γ Δ : Ctxt} {m : mod} {p : PName},
+        add_lock_after Γ m p = Some Δ ->
+        num_vars Γ = num_vars Δ.
     Proof using.
-      intros Γ1 Γ2; revert Γ1; induction Γ2 as [| Γ2 IHΓ2 m' τ | Γ2 IHΓ2 m']; intros Γ1 Δ m p eq; cbn.
-      - assumption.
-      - rewrite (IHΓ2 Γ1 Δ m p eq); reflexivity.
-      - pose proof (add_lock_after_prefix eq) as pfx.
-        assert (PrefixOf m (all_locks (ctxt_app Γ1 Γ2))) as pfx'
-            by (rewrite ctxt_app_all_locks; transitivity (all_locks Γ1); [assumption | apply PrefixOf_app]).
-        rewrite (PrefixOf_prefixb pfx').
-        rewrite (IHΓ2 Γ1 Δ m p eq). reflexivity.
+      intro Γ; induction Γ; intros Δ m' p eqΔ; cbn in *.
+      - eq_bool; subst; inversion eqΔ; subst; cbn; reflexivity.
+      - destruct (add_lock_after Γ m' p) as [Δ'|] eqn:eqΔ'; inversion eqΔ; subst; clear eqΔ;
+          rename eqΔ' into eqΔ; rename Δ' into Δ.
+        cbn; f_equal; eapply IHΓ; exact eqΔ.
+      - destruct (prefixb m' (all_locks Γ)) eqn:pfx.
+        -- eapply IHΓ; exact eqΔ.
+        -- destruct (remove_Prefix (all_locks Γ) m') eqn:eq; [| inversion eqΔ].
+           destruct (prefixb m0 m) eqn:eq'; inversion eqΔ; subst; clear eqΔ.
+           cbn; reflexivity.
     Qed.
 
     Lemma change_lock_equiv_none : forall {Γ1 Γ2 : Ctxt} {m : mod} {p q : PName},
@@ -1146,9 +1546,10 @@ Section Contexts.
         change_lock_after Γ2 m p q = Some Δ2 ->
         ctxt_equiv Δ1 Δ2.
     Proof using.
-      intros Γ1 Γ2 Δ1 Δ2 m p q eqv1; revert Δ1 Δ2 m p; induction eqv1;
-        try (rename m into m'); intros Δ1 Δ2 m p eq1 eq2; cbn in *;
+      intros Γ1 Γ2 Δ1 Δ2 m p q eqv1; revert Δ1 Δ2 m p q; induction eqv1;
+        try (rename m into m'); intros Δ1 Δ2 m p q eq1 eq2; cbn in *;
         repeat match goal with
+          | [ H : ?P |- ?P ] => exact H 
           | [ H : None = Some _ |- _ ] => inversion H
           | [ H : Some ?a = Some ?b |- _ ] =>
               inversion H; subst; clear H
@@ -1227,23 +1628,20 @@ Section Contexts.
           | [ H : context[mod_size (mod_app _ _)] |- _] =>
               rewrite mod_app_size in H; cbn in H
           end; try lia.
-      - rewrite mod_app_assoc in H6. apply mod_app_inj in H6; subst.
-        rewrite <- mod_app_assoc. constructor; auto.
-      - rewrite mod_app_assoc in H5. apply mod_app_inj in H5; subst.
-        rewrite <- mod_app_assoc in H7; cbn in H7. apply mod_app_inj in H7; subst.
+      - rewrite mod_app_assoc in H8; cbn in H8. apply mod_app_inj in H8; subst.
         assert (cons (mod_app m1 m) q = mod_app m1 (cons m q)) as eq by reflexivity; rewrite eq; clear eq.
-        rewrite mod_app_assoc. constructor; auto.
-      - rewrite mod_app_assoc in H6. apply mod_app_inj in H6; subst.
-        rewrite <- mod_app_assoc. constructor; auto.
-      - rewrite mod_app_assoc in H5; apply mod_app_inj in H5; subst.
-        assert (cons (mod_app m1 m0) p = mod_app m1 (cons m0 p)) as eq by reflexivity; rewrite eq in H7; clear eq.
-        rewrite <- mod_app_assoc in H7. apply mod_app_inj in H7; subst.
-        assert (cons (mod_app m1 m0) q = mod_app m1 (cons m0 q)) as eq by reflexivity; rewrite eq; clear eq.
-        rewrite mod_app_assoc. constructor; auto.
-      - destruct (change_lock_after Δ m p q) as [Δ3|] eqn:eq3;
-          [| rewrite (change_lock_equiv_none' eqv1_1 eq3) in eq1; inversion eq1].
-        transitivity Δ3. apply IHeqv1_1 with (m := m) (p := p); assumption.
-        apply IHeqv1_2 with (m := m) (p := p); assumption.
+        transitivity (LockExt Γ (mod_app m1 (cons m q))); [constructor; reflexivity |].
+        constructor; exact eqv1.
+      - (* apply PrefixOf_peel in H5; destruct H5 as [m3 eqm3]; subst. *)
+        rewrite mod_app_assoc in H8; apply mod_app_inj in H8; subst.
+        transitivity (LockExt Δ (mod_app m1 (cons m0 q))).
+        cbn; constructor; assumption.
+        constructor; reflexivity.
+      - rename Δ2 into Δ3; rename eq2 into eq3.
+        pose proof (change_lock_after_prefix eq1).
+        rewrite @all_locks_proper with (Δ := Δ) in H0; [| assumption].
+        destruct (@change_lock_after_defined Δ m p q H0) as [Δ2 eq2].
+        transitivity Δ2. eapply IHeqv1_1; eauto. eapply IHeqv1_2; eauto.
     Qed.
     
 
@@ -1256,6 +1654,7 @@ Section Contexts.
       intros Γ1 Γ2 Δ1 Δ2 m p eqv1; revert Δ1 Δ2 m p; induction eqv1;
         try (rename m into m'); intros Δ1 Δ2 m p eq1 eq2; cbn in *;
         repeat match goal with
+          | [ H : ?P |- ?P ] => exact H
           | [ H : None = Some _ |- _ ] => inversion H
           | [ H : Some ?a = Some ?b |- _ ] =>
               inversion H; subst; clear H
@@ -1334,21 +1733,12 @@ Section Contexts.
           | [ H : context[mod_size (mod_app _ _)] |- _] =>
               rewrite mod_app_size in H; cbn in H
           end; try lia.
-      - rewrite mod_app_assoc in H6. apply mod_app_inj in H6; subst.
-        rewrite <- mod_app_assoc. constructor; auto.
-      - rewrite mod_app_assoc in H5. apply mod_app_inj in H5; subst.
-        rewrite <- mod_app_assoc in H7; cbn in H7. apply mod_app_inj in H7; subst.
-        rewrite mod_app_assoc. constructor; auto.
-      - rewrite mod_app_assoc in H6. apply mod_app_inj in H6; subst.
-        rewrite <- mod_app_assoc. constructor; auto.
-      - rewrite mod_app_assoc in H5; apply mod_app_inj in H5; subst.
-        assert (cons (mod_app m1 m0) p = mod_app m1 (cons m0 p)) as eq by reflexivity; rewrite eq in H7; clear eq.
-        rewrite <- mod_app_assoc in H7. apply mod_app_inj in H7; subst.
-        rewrite mod_app_assoc. constructor; auto.
-      - destruct (remove_lock_after Δ m p) as [Δ3|] eqn:eq3;
-          [| rewrite (remove_lock_equiv_none' eqv1_1 eq3) in eq1; inversion eq1].
-        transitivity Δ3. apply IHeqv1_1 with (m := m) (p := p); assumption.
-        apply IHeqv1_2 with (m := m) (p := p); assumption.
+      1,2: rewrite mod_app_assoc in H8; apply mod_app_inj in H8; subst;
+      constructor; auto.
+      destruct (remove_lock_after Δ m p) as [Δ3|] eqn:eq3;
+        [| rewrite (remove_lock_equiv_none' eqv1_1 eq3) in eq1; inversion eq1].
+      transitivity Δ3. apply IHeqv1_1 with (m := m) (p := p); assumption.
+      apply IHeqv1_2 with (m := m) (p := p); assumption.
     Qed.
 
     
@@ -1361,6 +1751,7 @@ Section Contexts.
       intros Γ1 Γ2 Δ1 Δ2 m p eqv1; revert Δ1 Δ2 m p; induction eqv1;
         try (rename m into m'); intros Δ1 Δ2 m p eq1 eq2; cbn in *;
         repeat match goal with
+          | [ H : ?P |- ?P ] => exact H
           | [ H : None = Some _ |- _ ] => inversion H
           | [ H : Some ?a = Some ?b |- _ ] =>
               inversion H; subst; clear H
@@ -1422,7 +1813,8 @@ Section Contexts.
               lazymatch type of H with
               | change_prefix m1 m2 m3 = _ => fail
               | _ => let H := fresh in destruct (change_prefix m1 m2 m3) eqn: H
-              end 
+              end
+
           | [ H : context[add_lock_after ?Γ ?m ?p] |- _ ] =>
               lazymatch type of H with
               | add_lock_after Γ m p = _ => fail
@@ -1433,81 +1825,55 @@ Section Contexts.
               lazymatch goal with
               | [ H : ctxt_equiv Δ1 Δ2 |- _ ] => fail
               | _ => pose proof (IH Δ1 Δ2 m p H1 H2)
-              end 
+              end
+
           end; try (econstructor; eauto; fail); cbn in *;
         repeat match goal with
           | [ H : context[mod_size (mod_app _ _)] |- _] =>
               rewrite mod_app_size in H; cbn in H
-          end; try lia.
+          end;
+        repeat match goal with
+          | [ H : mod_app ?m1 ?m4 = mod_app (mod_app ?m1 ?m2) ?m3 |- _ ] =>
+              symmetry in H; rewrite mod_app_assoc in H; apply mod_app_inj in H; subst
+          | [ H : mod_app (mod_app ?m1 ?m2) ?m3 = mod_app ?m1 ?m4 |- _ ] =>
+              rewrite mod_app_assoc in H; apply mod_app_inj in H; subst
+          | [ H : mod_app ?m1 ?m2 = mod_app ?m1 ?m3 |- _ ] => apply mod_app_inj in H; subst
+        end; try lia.
       - destruct m0; cbn in H2; try lia.
         destruct m1; cbn in H2; try lia.
         cbn in *. exfalso; apply H4; reflexivity.
-      - rewrite mod_app_assoc in H6. apply mod_app_inj in H6; subst.
-        rewrite <- mod_app_assoc. constructor; auto.
-      - rewrite mod_app_assoc in H5. apply mod_app_inj in H5; subst.
-        rewrite <- mod_app_assoc in H7; apply mod_app_inj in H7; subst.
-        assert (cons (mod_app m1 m) p = mod_app m1 (cons m p)) as eq by reflexivity; rewrite eq; clear eq.
-        rewrite mod_app_assoc. constructor; auto.
-      - rewrite mod_app_assoc in H6; apply mod_app_inj in H6; subst.
-        rewrite <- mod_app_assoc. constructor; auto.
-      - exfalso; apply H1. transitivity (all_locks Γ); auto. apply PrefixOf_app.
-      - rewrite mod_app_assoc in H5; apply mod_app_inj in H5; subst.
-        rewrite <- mod_app_assoc in H7; apply mod_app_inj in H7; subst.
-        assert (cons (mod_app m1 m0) p = mod_app m1 (cons m0 p)) as eq by reflexivity; rewrite eq; clear eq.
-        rewrite mod_app_assoc. constructor; auto.
-      - pose proof (readd_remove_prefix H2). cbn in H4. rewrite H4 in H1. exfalso; apply H1; reflexivity.
-      - pose proof (readd_remove_prefix H2). cbn in H4. rewrite H4 in H1. exfalso; apply H1; reflexivity.
+      - assert (cons (mod_app m1 m) p = mod_app m1 (cons m p)) as eq by reflexivity; rewrite eq; clear eq.
+        constructor; auto.
+      - destruct m1; cbn in H4; try lia.
+        destruct m0; cbn in H4; try lia.
+        cbn in *; exfalso; apply H1; reflexivity.
+      - assert (cons (mod_app m1 m0) p = mod_app m1 (cons m0 p)) as eq by reflexivity; rewrite eq; clear eq.
+        constructor; auto.
+      - apply readd_remove_prefix in H2. cbn in H2. rewrite H2 in H1. exfalso; apply H1; reflexivity.
+      - apply readd_remove_prefix in H2. cbn in H2. rewrite H2 in H1. exfalso; apply H1; reflexivity.
       - destruct (add_lock_after Δ m p) as [Δ3|] eqn:eq3;
           [| rewrite (add_lock_equiv_none' eqv1_1 eq3) in eq1; inversion eq1].
         transitivity Δ3. apply IHeqv1_1 with (m := m) (p := p); assumption.
-        apply IHeqv1_2 with (m := m) (p := p); assumption.                                                  Qed.                                             
+        apply IHeqv1_2 with (m := m) (p := p); assumption.
+    Qed.                                             
 
-    Corollary remove_lock_after_equiv : forall {Γ Δ : Ctxt} {m : mod} {p : PName},
-        remove_lock_after Γ m p = Some Δ ->
-        exists (Γ1 Γ2 : Ctxt), ctxt_equiv Γ (ctxt_app (LockExt Γ1 p) Γ2) /\ ctxt_equiv Δ (ctxt_app Γ1 Γ2).
-    Proof using.
-      intros Γ Δ m p eq.
-      pose proof (remove_lock_after_prefix eq) as pfx.
-      destruct (all_locks_prefix_equiv' pfx) as [Γ1 [Γ2 [eqv eq']]].
-      assert (remove_lock_after (LockExt Γ1 p) m p = Some (LockExt Γ1 base)).
-      cbn; destruct (prefixb (cons m p) (all_locks Γ1)) eqn:eq_pfxb;
-        [apply prefixb_PrefixOf in eq_pfxb; rewrite eq' in eq_pfxb;
-         apply PrefixOf_size in eq_pfxb; cbn in eq_pfxb; lia|].
-      rewrite eq'. rewrite remove_all_mod. eq_bool. reflexivity.
-      apply @remove_lock_after_app with (Γ2 := Γ2) in H0.
-      pose proof (remove_lock_equiv eqv eq H0).
-      exists Γ1; exists Γ2; split; auto. transitivity (ctxt_app (LockExt Γ1 base) Γ2); auto.
-      apply ctxt_app_proper; [apply LockNothingEquiv2|]; reflexivity.
-    Qed.
-
-
-    Theorem ctxt_leq_all_locks : forall {Γ Δ : Ctxt} {ξ : renaming},
-        ctxt_leq Γ ξ Δ -> all_locks Γ = all_locks Δ.
-    Proof using.
-      intros Γ Δ ξ lq; induction lq; cbn; auto.
-      - rewrite IHlq; reflexivity.
-      - apply mod_app_assoc.
-      - symmetry; apply mod_app_assoc.
-      - transitivity (all_locks Δ); assumption.
-    Qed.
-
-    Theorem ctxt_leq_locks : forall {Γ Δ : Ctxt} {ξ : renaming},
-        ctxt_leq Γ ξ Δ ->
-        forall n, locks Γ n = locks Δ (ξ n).
-    Proof using.
-      intros Γ Δ ξ lq; induction lq; intro n; cbn; auto.
-      - destruct n; rewrite H0; cbn; auto.
-      - rewrite <- IHlq. destruct (locks Γ n); auto.
-      - rewrite H0; auto.
-      - destruct n. rewrite H0; reflexivity. destruct n. rewrite H1; reflexivity.
-        rewrite H2; reflexivity.
-      - rewrite H0. destruct (locks Γ n); [rewrite mod_app_assoc|]; reflexivity.
-      - rewrite H0. destruct (locks Γ n); [rewrite mod_app_assoc|]; reflexivity.
-      - rewrite H0. destruct (locks Γ n); reflexivity.
-      - rewrite H0. destruct (locks Γ n); reflexivity.
-      - rewrite IHlq1. rewrite IHlq2. rewrite H0. reflexivity.
-    Qed.
-
+    (* Corollary remove_lock_after_equiv : forall {Γ Δ : Ctxt} {m : mod} {p : PName}, *)
+    (*     remove_lock_after Γ m p = Some Δ -> *)
+    (*     exists (Γ1 Γ2 : Ctxt), ctxt_equiv Γ (ctxt_app (LockExt Γ1 p) Γ2) /\ ctxt_equiv Δ (ctxt_app Γ1 Γ2). *)
+    (* Proof using. *)
+    (*   intros Γ Δ m p eq. *)
+    (*   pose proof (remove_lock_after_prefix eq) as pfx. *)
+    (*   destruct (all_locks_prefix_equiv' pfx) as [Γ1 [Γ2 [eqv eq']]]. *)
+    (*   assert (remove_lock_after (LockExt Γ1 p) m p = Some (LockExt Γ1 base)). *)
+    (*   cbn; destruct (prefixb (cons m p) (all_locks Γ1)) eqn:eq_pfxb; *)
+    (*     [apply prefixb_PrefixOf in eq_pfxb; rewrite eq' in eq_pfxb; *)
+    (*      apply PrefixOf_size in eq_pfxb; cbn in eq_pfxb; lia|]. *)
+    (*   rewrite eq'. rewrite remove_all_mod. eq_bool. reflexivity. *)
+    (*   apply @remove_lock_after_app with (Γ2 := Γ2) in H0. *)
+    (*   pose proof (remove_lock_equiv eqv eq H0). *)
+    (*   exists Γ1; exists Γ2; split; auto. transitivity (ctxt_app (LockExt Γ1 base) Γ2); auto. *)
+    (*   apply ctxt_app_proper; [apply LockNothingEquiv2|]; reflexivity. *)
+    (* Qed. *)
 
     Theorem ctxt_leq_change_lock_after : forall {Γ1 Γ2 Δ1 Δ2 : Ctxt} {ξ : renaming} {m : mod} {p q : PName},
         ctxt_leq Γ1 ξ Γ2 ->
@@ -1518,6 +1884,7 @@ Section Contexts.
       intros Γ1 Γ2 Δ1 Δ2 ξ m p q lq; revert Δ1 Δ2 m p q; induction lq; try rename m into m'; intros Δ1 Δ2 m p q eq1 eq2;
         cbn in *;
         repeat match goal with
+          | [ H : ?P |- ?P ] => exact H 
           | [ H : None = Some _ |- _ ] => inversion H
           | [ H : Some _ = None |- _ ] => inversion H
           | [ H : cons _ _ = base |- _ ] => inversion H
@@ -1578,7 +1945,11 @@ Section Contexts.
               lazymatch type of H with
               | change_lock_after Γ m p q = _ => fail
               | forall Δ1 Δ2 m p q, change_lock_after _ _ _ _ = _ -> _ => fail
-              | _ => let H := fresh in destruct (change_lock_after Γ m p q) eqn: H
+              | _ =>
+                  lazymatch goal with
+                  | [ H' : change_lock_after Γ m p q = _ |- _ ] => rewrite H' in H
+                  | _ => let H := fresh in destruct (change_lock_after Γ m p q) eqn: H
+                  end
               end
           | [ H : context[eqb _ _ ] |- _ ] => eq_bool; subst 
           | [ IH : forall Δ1 Δ2 m p q, change_lock_after ?Γ1 m p q = Some Δ1 -> change_lock_after ?Γ2 m p q = Some Δ2 -> ctxt_leq Δ1 ?ξ Δ2, H1 : change_lock_after ?Γ1 ?m ?p ?q = Some ?Δ1, H2 : change_lock_after ?Γ2 ?m ?p ?q = Some ?Δ2 |- _ ] =>
@@ -1591,24 +1962,37 @@ Section Contexts.
           | [ H : context[mod_size (mod_app _ _)] |- _] =>
               rewrite mod_app_size in H; cbn in H
           end; try lia.
-      - rewrite mod_app_assoc in H7; apply mod_app_inj in H7; subst.
-        rewrite <- mod_app_assoc. constructor; auto.
-      - rewrite mod_app_assoc in H6; apply mod_app_inj in H6; subst.
-        rewrite <- mod_app_assoc in H8; cbn in H8; apply mod_app_inj in H8; subst.
-        assert (cons (mod_app m1 m) q = mod_app m1 (cons m q)) as eq by reflexivity; rewrite eq; clear eq.
-        rewrite mod_app_assoc. constructor; auto.
-      - rewrite mod_app_assoc in H7; apply mod_app_inj in H7; subst.
-        rewrite <- mod_app_assoc. constructor; auto.
-      - rewrite mod_app_assoc in H6; apply mod_app_inj in H6; subst.
-        rewrite <- mod_app_assoc in H8; cbn in H8; apply mod_app_inj in H8; subst.
-        assert (cons (mod_app m1 m0) q = mod_app m1 (cons m0 q)) as eq by reflexivity; rewrite eq; clear eq.
-        rewrite mod_app_assoc. constructor; auto.
+      - rewrite eq1 in eq2; inversion eq2; subst.
+        apply @ctxt_leq_ext with (ξ1 := id_renaming). intro n; rewrite H0; reflexivity.
+        apply ctxt_leq_refl.
+      - apply @ctxt_leq_ext with (ξ1 := id_renaming). intro n; rewrite H0; reflexivity.
+        apply ctxt_leq_refl.
+      - rewrite mod_app_assoc in H9; apply mod_app_inj in H9; subst.
+        apply @CtxtLeqTrans with (ξ1 := id_renaming) (ξ2 := id_renaming) (Δ := LockExt Γ (mod_app m1 (cons m q))). intro n; rewrite H0; reflexivity.
+        constructor. intro n; reflexivity.
+        apply ctxt_leq_refl.
+      - rewrite eq1 in eq2; inversion eq2; subst.
+        apply @ctxt_leq_ext with (ξ1 := id_renaming). intro n; rewrite H0; reflexivity.
+        apply ctxt_leq_refl.
+      - apply @ctxt_leq_ext with (ξ1 := id_renaming). intro n; rewrite H0; reflexivity.
+        apply ctxt_leq_refl.
+      - rewrite mod_app_assoc in H9; apply mod_app_inj in H9; subst.
+        apply @CtxtLeqTrans with (ξ1 := id_renaming) (ξ2 := id_renaming) (Δ := LockExt Γ (mod_app m1 (cons m0 q))).
+        intro n; rewrite H0; reflexivity.
+        apply ctxt_leq_refl.
+        constructor. intro n; reflexivity.
+      - rewrite eq1 in eq2; inversion eq2; subst.
+        apply @ctxt_leq_ext with (ξ1 := id_renaming). intro n; rewrite H0; reflexivity.
+        apply ctxt_leq_refl.
+      - rewrite eq1 in eq2; inversion eq2; subst.
+        apply @ctxt_leq_ext with (ξ1 := id_renaming). intro n; rewrite H0; reflexivity.
+        apply ctxt_leq_refl.
       - pose proof (change_lock_after_prefix eq1) as lox;
           rewrite (ctxt_leq_all_locks lq1) in lox;
           destruct (@change_lock_after_defined _ _ _ q lox) as [Δ3 eq3]; clear lox.
         pose proof (IHlq1 _ _ _ _ _ eq1 eq3).
         pose proof (IHlq2 _ _ _ _ _ eq3 eq2).
-        eapply CtxtLeq''Trans; eauto.
+        eapply CtxtLeqTrans; eauto.
     Qed.
     
     Theorem ctxt_leq_remove_lock_after : forall {Γ1 Γ2 Δ1 Δ2 : Ctxt} {ξ : renaming} {m : mod} {p : PName},
@@ -1620,6 +2004,7 @@ Section Contexts.
       intros Γ1 Γ2 Δ1 Δ2 ξ m p lq; revert Δ1 Δ2 m p; induction lq; try rename m into m'; intros Δ1 Δ2 m p eq1 eq2;
         cbn in *;
         repeat match goal with
+          | [ H : ?P |- ?P ] => exact H
           | [ H : None = Some _ |- _ ] => inversion H
           | [ H : Some _ = None |- _ ] => inversion H
           | [ H : cons _ _ = base |- _ ] => inversion H
@@ -1692,26 +2077,43 @@ Section Contexts.
         repeat match goal with
           | [ H : context[mod_size (mod_app _ _)] |- _] =>
               rewrite mod_app_size in H; cbn in H
-          end; try lia.
-      - rewrite mod_app_assoc in H7; apply mod_app_inj in H7; subst.
-        rewrite <- mod_app_assoc. apply LockCollapseLeq''; auto.
-      - rewrite mod_app_assoc in H6; apply mod_app_inj in H6; subst.
-        assert (cons (mod_app m1 m) p = mod_app m1 (cons m p)) by reflexivity.
-        rewrite H6 in H8. rewrite mod_app_assoc in H8. do 2 apply mod_app_inj in H8.
-        subst.
-        rewrite mod_app_assoc. apply LockCollapseLeq''; auto.
-      - rewrite mod_app_assoc in H7; apply mod_app_inj in H7; subst.
-        rewrite <- mod_app_assoc. apply LockSplitLeq''; auto.
-      - rewrite mod_app_assoc in H6; apply mod_app_inj in H6; subst.
-        rewrite <- mod_app_assoc in H8; cbn in H8; apply mod_app_inj in H8; subst.
-        rewrite mod_app_assoc; apply LockSplitLeq''; auto.
+          end;
+        repeat match goal with
+          | [ H : mod_app ?m1 ?m4 = mod_app (mod_app ?m1 ?m2) ?m3 |- _ ] =>
+              symmetry in H; rewrite mod_app_assoc in H; apply mod_app_inj in H; subst
+          | [ H : mod_app (mod_app ?m1 ?m2) ?m3 = mod_app ?m1 ?m4 |- _ ] =>
+              rewrite mod_app_assoc in H; apply mod_app_inj in H; subst
+          | [ H : mod_app ?m1 ?m2 = mod_app ?m1 ?m3 |- _ ] => apply mod_app_inj in H; subst
+          end; try lia; try (econstructor; eauto with ctxts; fail).
+      - rewrite eq2 in eq1; inversion eq1; subst.
+        apply @ctxt_leq_ext with (ξ1 := id_renaming).
+        intro n; unfold id_renaming; rewrite H0; reflexivity.
+        apply ctxt_leq_refl.
+      - apply @ctxt_leq_ext with (ξ1 := id_renaming).
+        intro n; unfold id_renaming; rewrite H0; reflexivity.
+        apply ctxt_leq_refl.
+      - rewrite eq2 in eq1; inversion eq1; subst.
+        apply @ctxt_leq_ext with (ξ1 := id_renaming).
+        intro n; unfold id_renaming; rewrite H0; reflexivity.
+        apply ctxt_leq_refl.
+      - apply @ctxt_leq_ext with (ξ1 := id_renaming).
+        intro n; unfold id_renaming; rewrite H0; reflexivity.
+        apply ctxt_leq_refl.
+      - rewrite eq2 in eq1; inversion eq1; subst.
+        apply @ctxt_leq_ext with (ξ1 := id_renaming).
+        intro n; unfold id_renaming; rewrite H0; reflexivity.
+        apply ctxt_leq_refl.
+      - rewrite eq2 in eq1; inversion eq1; subst.
+        apply @ctxt_leq_ext with (ξ1 := id_renaming).
+        intro n; unfold id_renaming; rewrite H0; reflexivity.
+        apply ctxt_leq_refl.
       - pose proof (remove_lock_after_prefix eq1).
         rewrite (ctxt_leq_all_locks lq1) in H1.
         apply remove_lock_after_defined in H1.
         destruct H1 as [Δ3 eq3].
         specialize (IHlq1 _ _ _ _ eq1 eq3).
         specialize (IHlq2 _ _ _ _ eq3 eq2).
-        apply @CtxtLeq''Trans with (ξ1 := ξ1) (ξ2 := ξ2) (Δ := Δ3); auto.
+        apply @CtxtLeqTrans with (ξ1 := ξ1) (ξ2 := ξ2) (Δ := Δ3); auto.
     Qed.
 
     Theorem ctxt_leq_add_lock_after : forall {Γ1 Γ2 Δ1 Δ2 : Ctxt} {ξ : renaming} {m : mod} {p : PName},
@@ -1723,10 +2125,13 @@ Section Contexts.
       intros Γ1 Γ2 Δ1 Δ2 ξ m p lq; revert Δ1 Δ2 m p; induction lq; try rename m into m'; intros Δ1 Δ2 m p eq1 eq2;
         cbn in *;
         repeat match goal with
+          | [ H : ?P |- ?P ] => exact H
           | [ H : None = Some _ |- _ ] => inversion H
           | [ H : Some _ = None |- _ ] => inversion H
           | [ H : cons _ _ = base |- _ ] => inversion H
           | [ H : base = cons _ _ |- _ ] => inversion H
+          | [ H : ~ PrefixOf ?a ?a |- _ ] =>
+              exfalso; apply H; reflexivity
           | [ H : Some _ = Some _ |- _ ] => inversion H; subst; clear H
           | [ H : ctxt_leq ?Γ ?ξ ?Δ, H' : context[all_locks ?Δ] |- _ ] =>
               rewrite <- (ctxt_leq_all_locks H) in H'
@@ -1790,29 +2195,36 @@ Section Contexts.
               lazymatch goal with
               | [ H : ctxt_leq Δ1 ξ Δ2 |- _ ] => fail
               | _ => pose proof (IH Δ1 Δ2 m p H1 H2)
-              end 
+              end
+          | [ H1 : ?a = Some ?b, H2 : ?a = Some ?c |- _ ] =>
+              tryif unify b c
+              then fail
+              else rewrite H2 in H1; inversion H1; subst
+          | [ H : forall n, ?ξ n = n |- ctxt_leq ?Δ ?ξ ?Δ ] =>
+              apply @ctxt_leq_ext with (ξ1 := id_renaming);
+              [ intro n; unfold id_renaming; rewrite H0; reflexivity
+              | apply ctxt_leq_refl ]
           end; try (econstructor; eauto with ctxts; fail); cbn in *;
         repeat match goal with
           | [ H : context[mod_size (mod_app _ _)] |- _] =>
               rewrite mod_app_size in H; cbn in H
-          end; try lia.
+          end;
+                repeat match goal with
+          | [ H : mod_app ?m1 ?m4 = mod_app (mod_app ?m1 ?m2) ?m3 |- _ ] =>
+              symmetry in H; rewrite mod_app_assoc in H; apply mod_app_inj in H; subst
+          | [ H : mod_app (mod_app ?m1 ?m2) ?m3 = mod_app ?m1 ?m4 |- _ ] =>
+              rewrite mod_app_assoc in H; apply mod_app_inj in H; subst
+          | [ H : mod_app ?m1 ?m2 = mod_app ?m1 ?m3 |- _ ] => apply mod_app_inj in H; subst
+          end; try lia; try (econstructor; eauto with ctxts; fail).
       - do 2 constructor; assumption.
-      - destruct m1; cbn in H3; try lia. destruct m0; cbn in H3; try lia.
-        cbn in *.  exfalso; apply H5; reflexivity.
-      - rewrite mod_app_assoc in H7; apply mod_app_inj in H7; subst.
-        rewrite <- mod_app_assoc. constructor; auto.
-      - rewrite mod_app_assoc in H6; apply mod_app_inj in H6; subst.
-        rewrite <- mod_app_assoc in H8; apply mod_app_inj in H8; subst.
-        assert (cons (mod_app m1 m) p = mod_app m1 (cons m p)) as eq by reflexivity; rewrite eq; clear eq.
-        rewrite mod_app_assoc. constructor; auto.
-      - rewrite mod_app_assoc in H7; apply mod_app_inj in H7; subst.
-        rewrite <- mod_app_assoc. constructor; auto.
-      - destruct m1; destruct m0; cbn in H5; try lia; cbn in *.
-        exfalso; apply H2; reflexivity.
-      - rewrite mod_app_assoc in H6; apply mod_app_inj in H6; subst.
-        rewrite <- mod_app_assoc in H8; apply mod_app_inj in H8; subst.
-        assert (cons (mod_app m1 m0) p = mod_app m1 (cons m0 p)) as eq by reflexivity; rewrite eq; clear eq.
-        rewrite mod_app_assoc; constructor; auto.
+      - destruct m0; cbn in H3; try lia.
+        destruct m1; cbn in H3; try lia.
+        cbn in *. exfalso; apply H5; reflexivity.
+      - destruct m0; cbn in H5; try lia.
+        destruct m1; cbn in H5; try lia.
+        cbn in *. exfalso; apply H2; reflexivity.
+      - assert (cons (mod_app m1 m0) p = mod_app m1 (cons m0 p)) as eq by reflexivity; rewrite eq; clear eq.
+        constructor; auto.
       - exfalso; apply H2; reflexivity.
       - exfalso; apply H2; reflexivity.
       - pose proof (add_lock_after_prefix eq1).
@@ -1821,7 +2233,37 @@ Section Contexts.
         destruct H1 as [Δ3 eq3].
         specialize (IHlq1 _ _ _ _ eq1 eq3).
         specialize (IHlq2 _ _ _ _ eq3 eq2).
-        apply @CtxtLeq''Trans with (ξ1 := ξ1) (ξ2 := ξ2) (Δ := Δ3); auto.
+        apply @CtxtLeqTrans with (ξ1 := ξ1) (ξ2 := ξ2) (Δ := Δ3); auto.
+    Qed.
+
+    Lemma change_lock_after_no_locks : forall {Γ1 : Ctxt} {m : mod} {p q : PName},
+        all_locks Γ1 = base ->
+        change_lock_after Γ1 m p q = None.
+    Proof using.
+      intro Γ1; induction Γ1; intros m' p q eq; cbn in *.
+      - reflexivity.
+      - rewrite (IHΓ1 m' p q eq); reflexivity.
+      - destruct (mod_app_base_inv _ _ eq); subst; clear eq.
+        destruct (prefixb (cons m' p) (all_locks Γ1)) eqn:eq'.
+        exact (IHΓ1 m' p q H0).
+        rewrite H0. rewrite (remove_base_prefix m').
+        destruct (prefixb (cons m' p) base) eqn:eq; [| reflexivity].
+        apply prefixb_PrefixOf in eq; apply PrefixOf_base in eq; inversion eq.
+    Qed.
+
+    Lemma remove_lock_after_no_locks : forall {Γ1 : Ctxt} {m : mod} {p : PName},
+        all_locks Γ1 = base ->
+        remove_lock_after Γ1 m p = None.
+    Proof using.
+      intro Γ1; induction Γ1; intros m' p eq; cbn in *.
+      - reflexivity.
+      - rewrite (IHΓ1 m' p eq); reflexivity.
+      - destruct (mod_app_base_inv _ _ eq); subst; clear eq.
+        destruct (prefixb (cons m' p) (all_locks Γ1)) eqn:pfx.
+        exact (IHΓ1 m' p H0).
+        rewrite H0. rewrite (remove_base_prefix m').
+        destruct (prefixb (cons m' p) base) eqn:eq; [| reflexivity].
+        apply prefixb_PrefixOf in eq; apply PrefixOf_base in eq; inversion eq.
     Qed.
 
   End LockChanges.

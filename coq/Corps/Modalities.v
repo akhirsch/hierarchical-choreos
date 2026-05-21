@@ -487,7 +487,16 @@ Section Modality.
     constructor; auto.
   Qed.
 
+  Lemma remove_base_prefix : forall (m : mod), remove_Prefix base m = Some m.
+  Proof using.
+    intro m; induction m; cbn; eq_bool; subst.
+    - reflexivity.
+    - inversion eq.
+    - rewrite IHm; reflexivity.
+  Qed.
+
   Definition mod_eq_dec  : forall (m1 m2 : mod), {m1 = m2} + {m1 <> m2}.
+  Proof.
     refine (fix mod_eq_dec (m1 m2 : mod) :=
               match m1, m2 with
               | base, base => left eq_refl
@@ -646,6 +655,7 @@ Section Modality.
   Qed.
   
   Definition remove_Prefix' : forall {m1 m2 : mod} (pfx : PrefixOf m1 m2), mod.
+  Proof.
     refine (fix remove_Prefix' m1 m2 pfx :=
               match mod_eq_dec m1 m2 with
               | left _ => base
@@ -710,12 +720,14 @@ Section Modality.
     | MoreCons (p : PName) (m1 m2 : mod) (cto : ConsTowerOn m1 m2) : ConsTowerOn (cons m1 p) m2.
 
     Definition ConsTower_reduce : forall m1 m2 p, ConsTowerOn m1 (cons m2 p) -> ConsTowerOn m1 m2.
+    Proof.
       intros m1 m2 p cto; dependent induction cto.
       apply MoreCons; apply OneCons.
       apply MoreCons. apply IHcto; auto.
     Defined.
     
     Definition ConsTowerOn_antirefl : forall m, ConsTowerOn m m -> False.
+    Proof.
       intro m; induction m; intro cto.
       inversion cto.
       inversion cto; subst.
@@ -724,6 +736,7 @@ Section Modality.
     Defined.
     
     Definition ConsTowerOnPrefixT : forall m1 m2, ConsTowerOn m1 m2 -> PrefixOfT m1 m2 -> False.
+    Proof.
       intros m1 m2 cot pfxt; induction pfxt.
       - apply ConsTowerOn_antirefl with (m := m); exact cot.
       - apply IHpfxt. apply ConsTower_reduce with (p := p). exact cot.
@@ -742,7 +755,7 @@ Section Modality.
         -- rewrite (IHpfx2 pfx1); reflexivity.
     Qed.
 
-    Lemma remove_base_prefix : forall (m : mod) (pfx :PrefixOfT base m),
+    Lemma remove_base_prefix' : forall (m : mod) (pfx :PrefixOfT base m),
         remove_PrefixT pfx = m.
     Proof using.
       intro m; induction m; intro pfx;
