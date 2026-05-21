@@ -203,7 +203,7 @@ Section CorpsTypes.
       TypedSubst (VarExt Γ m τ) σ2 Δ
     | VarRSubst (Γ Δ : Ctxt) (m : mod) (τ : type) (σ1 σ2 : substitution) :
       TypedSubst Γ σ1 Δ ->
-      (forall n, σ2 n = ren (σ1 n) S) -> 
+      (forall n, n < num_vars Γ -> σ2 n = ren (σ1 n) S) -> 
       TypedSubst Γ σ2 (VarExt Δ m τ)
     | LockSubst (Γ Δ : Ctxt) (m : mod) (σ : substitution) :
       TypedSubst Γ σ Δ ->
@@ -222,6 +222,7 @@ Section CorpsTypes.
       - rewrite H0. apply @weakening with (Γ := LockExt Δ m2).
         constructor; eapply VarAddLeq; [apply ctxt_leq_refl | unfold id_renaming; auto].
         apply IHstyp with (m1 := m1); assumption.
+        apply InCtxt_lt in i; assumption.
       - dependent destruction i; cbn.
         rewrite mod_app_assoc in i. apply IHstyp in i.
         apply Typed_proper with (Δ := LockExt (LockExt Δ m) m2) in i. assumption.
@@ -286,6 +287,7 @@ Section CorpsTypes.
       - destruct (lock_location Δ m') eqn:eqj'; inversion eqj; subst; clear eqj; rename eqj' into eqj.
         rewrite H0. apply @closed_below_ren with (k' := n); [apply le_n_S|].
         apply IHstyp with (i := i) (m := m'); assumption.
+        assumption.
       - rewrite <- (TypedSubstAllLocks styp) in eqj; destruct (prefixb m' (all_locks Γ)) eqn:pfx.
         apply IHstyp with (i := i) (m := m'); assumption.
         destruct (prefixb m' (mod_app (all_locks Γ) m)) eqn: pfx'; inversion eqi; inversion eqj; subst.
@@ -324,8 +326,9 @@ Section CorpsTypes.
       - destruct (change_lock_after Δ n p q) eqn:eqΔ'; inversion eqΔ; subst; clear eqΔ; rename eqΔ' into eqΔ; rename c into Δ2.
         apply VarRSubst with (σ1 := unit_subst_before σ1 n').
         eapply IHstyp; eauto.
-        intro n0. unfold unit_subst_before.
+        intros n0 n0_lt_nv. unfold unit_subst_before.
         destruct (PeanoNat.Nat.ltb n0 n'); cbn; auto.
+        apply H0; apply change_lock_after_num_vars in eqΓ; rewrite eqΓ; assumption.
       - rewrite <- (TypedSubstAllLocks styp) in eqΔ.
         destruct (prefixb (cons n p) (all_locks Γ)) eqn:pfx;
           [| destruct (remove_Prefix (all_locks Γ) n) as [m''|]; [|inversion eqΓ]].
@@ -370,6 +373,7 @@ Section CorpsTypes.
         eapply IHstyp; eauto.
         intro n0. unfold unit_subst_before.
         destruct (PeanoNat.Nat.ltb n0 n'); cbn; auto.
+        intro n_lt_nv; apply H0; apply remove_lock_after_num_vars in eqΓ; rewrite eqΓ; assumption.
       - rewrite <- (TypedSubstAllLocks styp) in eqΔ.
         destruct (prefixb (cons n p) (all_locks Γ)) eqn:pfx;
           [| destruct (remove_Prefix (all_locks Γ) n) as [m''|]; [|inversion eqΓ]].
@@ -392,7 +396,18 @@ Section CorpsTypes.
     Proof using.
       intros Γ1 Γ2 Δ1 Δ2 σ m p n styp; revert Γ2 Δ2 m p n; dependent induction styp;
         intros Γ2 Δ2 n p n' eqΓ eqΔ loc; cbn in *.
-      - (* eapply add_lock_after_no_locks in H1; rewrite H1 in eqΔ; inversion eqΔ. *) admit.
+      - apply add_lock_no_locks in eqΔ; auto.
+        pose proof (equiv_empty_emptoid2 Γ H0).
+        apply add_lock_emptoid in eqΓ; auto; destruct eqΓ; subst.
+        rewrite BaseLockLocation in loc.
+        rewrite emptoid_num_vars in loc; [| assumption].
+        inversion loc; subst; clear loc.
+        generalize (num_vars Δ) as n; intro n.
+        clear Γ Δ H0 H1 H2.
+        induction n; cbn.
+        -- apply LockSubst; apply EmptySubst; reflexivity.
+        -- apply VarRSubst with (σ1 := σ). assumption.
+           intros n0 n0_lt_nv; cbn in n0_lt_nv. inversion n0_lt_nv.
       - destruct (add_lock_after Γ n p) eqn:eqΓ';
           inversion eqΓ; subst; clear eqΓ; rename eqΓ' into eqΓ.
         destruct (lock_location Γ n) eqn:loc';
@@ -414,6 +429,7 @@ Section CorpsTypes.
         eapply IHstyp; eauto.
         intro n0. unfold unit_subst_before.
         destruct (PeanoNat.Nat.ltb n0 n'); cbn; auto.
+        intro n0_lt_nv; apply H0; apply add_lock_after_num_vars in eqΓ; rewrite eqΓ; assumption.
       - rewrite <- (TypedSubstAllLocks styp) in eqΔ.
         destruct (prefixb n (all_locks Γ)) eqn:pfx;
           [| destruct (remove_Prefix (all_locks Γ) n) as [m''|]; [|inversion eqΓ]].
@@ -425,8 +441,7 @@ Section CorpsTypes.
            intro n0. unfold unit_subst_before.
            destruct (PeanoNat.Nat.ltb n0 0) eqn:eq; [| reflexivity].
            rewrite PeanoNat.Nat.ltb_lt in eq; inversion eq.
-    (* Qed. *)
-    Admitted.
+    Qed.
 
     Theorem TypedSubstitution : forall {Γ Δ : Ctxt} {σ : substitution} {e : expr} {τ : type},
         Typed Γ e τ ->

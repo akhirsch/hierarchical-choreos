@@ -206,7 +206,6 @@ Section Contexts.
       rewrite (PrefixOf_prefixb (base_Prefix (all_locks Γ))).
       reflexivity.
     Qed.
-
     
   End BasicFunctions.
 
@@ -732,7 +731,19 @@ Section Contexts.
         apply IHeqv; auto.
     Qed.
 
-    
+    Lemma emptoid_all_locks : forall {Γ : Ctxt},
+        Emptoid Γ ->
+        all_locks Γ = base.
+    Proof using.
+      intros Γ etd; induction etd; cbn. reflexivity. apply IHetd.
+    Qed.
+
+    Lemma emptoid_num_vars : forall {Γ : Ctxt},
+        Emptoid Γ ->
+        num_vars Γ = 0.
+    Proof using.
+      intros Γ etd; induction etd; cbn; auto.
+    Qed.
     
   End Emptoid.
 
@@ -2265,6 +2276,43 @@ Section Contexts.
         destruct (prefixb (cons m' p) base) eqn:eq; [| reflexivity].
         apply prefixb_PrefixOf in eq; apply PrefixOf_base in eq; inversion eq.
     Qed.
+
+    Lemma add_lock_emptoid : forall {Γ1 : Ctxt} {m : mod} {p : PName} {Γ2 : Ctxt},
+        Emptoid Γ1 ->
+        add_lock_after Γ1 m p = Some Γ2 ->
+        m = base /\ Γ2 = LockExt EmptyCtxt p.
+    Proof using.
+      intros Γ1 m p Γ2 etd; revert m p Γ2; induction etd; intros m p Γ2; cbn; intro eq.
+      - eq_bool; subst; inversion eq; subst. split; reflexivity.
+      - destruct (prefixb m (all_locks Γ)) eqn:eq'.
+        destruct (IHetd m p Γ2 eq); split; assumption.
+        rewrite (emptoid_all_locks etd) in eq; rewrite remove_base_prefix in eq.
+        eq_bool; subst; inversion eq; subst.
+        apply prefixb_not_PrefixOf in eq'; exfalso; apply eq'; apply base_Prefix.
+    Qed.
+
+    Fixpoint unit_ctxt (n : nat) : Ctxt :=
+      match n with
+      | 0 => EmptyCtxt
+      | S n => VarExt (unit_ctxt n) base UnitT
+      end.
+
+    Lemma add_lock_no_locks : forall {Γ1 : Ctxt} {m : mod} {p : PName} {Γ2 : Ctxt},
+        all_locks Γ1 = base ->
+        add_lock_after Γ1 m p = Some Γ2 ->
+        Γ2 = ctxt_app (LockExt EmptyCtxt p) (unit_ctxt (num_vars Γ1)).
+    Proof using.
+      intro Γ1; induction Γ1; intros m' p Γ2 eq1 eq2; cbn in *.
+      - eq_bool; subst; inversion eq2; subst; reflexivity.
+      - destruct (add_lock_after Γ1 m' p) as [Δ'|] eqn:eq2'; inversion eq2; subst; clear eq2;
+          rename eq2' into eq2; rename Δ' into Δ.
+        apply IHΓ1 in eq2; subst; auto.
+      - apply mod_app_base_inv in eq1; destruct eq1 as [eq1 eq1']; subst.
+        rewrite eq1 in eq2.
+        destruct (prefixb m' base) eqn:eq2'; subst. apply IHΓ1 in eq2; auto.
+        rewrite remove_base_prefix in eq2.
+        rewrite eq2' in eq2; inversion eq2.
+    Qed.        
 
   End LockChanges.
 
