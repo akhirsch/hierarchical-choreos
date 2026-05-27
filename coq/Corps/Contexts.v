@@ -866,6 +866,53 @@ Section Contexts.
       | LockExt Γ m => @LockExtLeq Γ Γ id_renaming m (ctxt_leq_refl Γ)
       end.
 
+    Theorem ctxt_leq_refl' : forall (Γ1 Γ2 : Ctxt),
+        ctxt_equiv Γ1 Γ2 ->
+        ctxt_leq Γ1 id_renaming Γ2.
+    Proof using.
+      intros Γ1 Γ2 eqv; induction eqv; cbn;
+        try (econstructor; eauto; fail).
+      - eapply VarExtLeq; eauto. intro n; unfold id_renaming; destruct n; reflexivity.
+      - eapply @CtxtLeqTrans with (ξ1 := id_renaming)
+                                  (ξ2 := id_renaming)
+                                  (Δ := LockExt Γ (mod_app m1 m2)); eauto.
+        -- eapply LockCollapseLeq; intro n; reflexivity.
+        -- eapply LockExtLeq; eauto.
+      - eapply @CtxtLeqTrans with (ξ1 := id_renaming)
+                                  (ξ2 := id_renaming)
+                                  (Δ := LockExt Δ (mod_app m1 m2)); eauto.
+        -- eapply LockExtLeq; eauto.
+        -- eapply LockSplitLeq; eauto.
+      - eapply @CtxtLeqTrans with (ξ1 := id_renaming)
+                                  (ξ2 := id_renaming)
+                                  (Δ := Δ); eauto.
+        eapply LockNothingLeq1''; auto.
+      - eapply @CtxtLeqTrans with (ξ1 := id_renaming)
+                                  (ξ2 := id_renaming)
+                                  (Δ := Γ); eauto.
+        eapply LockNothingLeq2''; auto.
+      - eapply @CtxtLeqTrans with (ξ1 := id_renaming)
+                                  (ξ2 := id_renaming)
+                                  (Δ := Δ); eauto.
+    Qed.
+
+    Theorem ctxt_leq_proper : forall {Γ1 Γ2 Δ1 Δ2 : Ctxt} {ξ : renaming},
+        ctxt_equiv Γ1 Γ2 ->
+        ctxt_equiv Δ1 Δ2 ->
+        ctxt_leq Γ1 ξ Δ1 ->
+        ctxt_leq Γ2 ξ Δ2.
+    Proof using.
+      intros Γ1 Γ2 Δ1 Δ2 ξ H0 H1 H2. symmetry in H0.
+      eapply @CtxtLeqTrans with (ξ1 := id_renaming)
+                                (ξ2 := ξ)
+                                (Δ := Γ1); eauto.
+      apply ctxt_leq_refl'; auto.
+      eapply @CtxtLeqTrans with (ξ1 := ξ)
+                                (ξ2 := id_renaming)
+                                (Δ := Δ1); eauto.
+      apply ctxt_leq_refl'; auto.
+    Qed.
+
     Theorem ctxt_leq_numvars: forall Γ Δ ξ,
         ctxt_leq Γ ξ Δ ->
         num_vars Γ <= num_vars Δ.
@@ -1173,6 +1220,9 @@ Section Contexts.
                end
       end.
 
+    
+
+
     Theorem change_lock_vars : forall {Γ Δ : Ctxt} {m1 : mod} {p q : PName} {m2 : mod} {τ : type} {n m : nat},
         lock_location Γ (cons m1 p) = Some m ->
         m <= n ->
@@ -1395,7 +1445,7 @@ Section Contexts.
            rewrite remove_app in eq_rmv; inversion eq_rmv; subst; clear eq_rmv.
            apply prefixb_PrefixOf; assumption.
     Qed.
-
+    
     Theorem all_locks_prefix_equiv : forall {Γ : Ctxt} {m : mod},
         PrefixOf m (all_locks Γ) ->
         exists (Γ1 Γ2 : Ctxt), ctxt_equiv Γ (ctxt_app Γ1 Γ2) /\ all_locks Γ1 = m /\ NonVar Γ1.
@@ -1551,7 +1601,7 @@ Section Contexts.
       apply @add_lock_equiv_none with (Γ1 := Γ2); [symmetry|]; assumption.
     Qed.
 
-    Theorem change_lock_equiv : forall {Γ1 Γ2 Δ1 Δ2 : Ctxt} {m : mod} {p q : PName},
+    Theorem change_lock_after_proper' : forall {Γ1 Γ2 Δ1 Δ2 : Ctxt} {m : mod} {p q : PName},
         ctxt_equiv Γ1 Γ2 ->
         change_lock_after Γ1 m p q = Some Δ1 ->
         change_lock_after Γ2 m p q = Some Δ2 ->
@@ -1654,9 +1704,23 @@ Section Contexts.
         destruct (@change_lock_after_defined Δ m p q H0) as [Δ2 eq2].
         transitivity Δ2. eapply IHeqv1_1; eauto. eapply IHeqv1_2; eauto.
     Qed.
-    
 
-    Theorem remove_lock_equiv : forall {Γ1 Γ2 Δ1 Δ2 : Ctxt} {m : mod} {p : PName},
+    
+    Theorem change_lock_after_proper : forall {Γ1 Γ2 Δ1 : Ctxt} {m : mod} {p q : PName},
+        change_lock_after Γ1 m p q = Some Δ1 ->
+        ctxt_equiv Γ1 Γ2 ->
+        exists Δ2, change_lock_after Γ2 m p q = Some Δ2 /\ ctxt_equiv Δ1 Δ2.
+    Proof using.
+      intros Γ1 Γ2 Δ1 m p q H0 H1.
+      pose proof (change_lock_after_prefix H0).
+      rewrite (all_locks_proper H1) in H2.
+      eapply @change_lock_after_defined with (q := q) in H2.
+      destruct H2 as [Δ2 eqΔ2].
+      exists Δ2; split; [exact eqΔ2|].
+      eapply change_lock_after_proper'; eauto.
+    Qed.
+
+    Theorem remove_lock_after_proper' : forall {Γ1 Γ2 Δ1 Δ2 : Ctxt} {m : mod} {p : PName},
         ctxt_equiv Γ1 Γ2 ->
         remove_lock_after Γ1 m p = Some Δ1 ->
         remove_lock_after Γ2 m p = Some Δ2 ->
@@ -1752,8 +1816,22 @@ Section Contexts.
       apply IHeqv1_2 with (m := m) (p := p); assumption.
     Qed.
 
+    Theorem remove_lock_after_proper : forall {Γ1 Γ2 Δ1 : Ctxt} {m : mod} {p : PName},
+        remove_lock_after Γ1 m p = Some Δ1 ->
+        ctxt_equiv Γ1 Γ2 ->
+        exists Δ2, remove_lock_after Γ2 m p = Some Δ2 /\ ctxt_equiv Δ1 Δ2.
+    Proof using.
+      intros Γ1 Γ2 Δ1 m p H0 H1.
+      pose proof (remove_lock_after_prefix H0).
+      rewrite (all_locks_proper H1) in H2.
+      eapply @remove_lock_after_defined in H2.
+      destruct H2 as [Δ2 eqΔ2].
+      exists Δ2; split; [exact eqΔ2|].
+      eapply remove_lock_after_proper'; eauto.
+    Qed.
+
     
-    Theorem add_lock_equiv : forall {Γ1 Γ2 Δ1 Δ2 : Ctxt} {m : mod} {p : PName},
+    Theorem add_lock_after_proper' : forall {Γ1 Γ2 Δ1 Δ2 : Ctxt} {m : mod} {p : PName},
         ctxt_equiv Γ1 Γ2 ->
         add_lock_after Γ1 m p = Some Δ1 ->
         add_lock_after Γ2 m p = Some Δ2 ->
@@ -1868,6 +1946,21 @@ Section Contexts.
         apply IHeqv1_2 with (m := m) (p := p); assumption.
     Qed.                                             
 
+    Theorem add_lock_after_proper : forall {Γ1 Γ2 Δ1 : Ctxt} {m : mod} {p : PName},
+        add_lock_after Γ1 m p = Some Δ1 ->
+        ctxt_equiv Γ1 Γ2 ->
+        exists Δ2, add_lock_after Γ2 m p = Some Δ2 /\ ctxt_equiv Δ1 Δ2.
+    Proof using.
+      intros Γ1 Γ2 Δ1 m p H0 H1.
+      pose proof (add_lock_after_prefix H0).
+      rewrite (all_locks_proper H1) in H2.
+      eapply @add_lock_after_defined in H2.
+      destruct H2 as [Δ2 eqΔ2].
+      exists Δ2; split; [exact eqΔ2|].
+      eapply add_lock_after_proper'; eauto.
+    Qed.
+
+    
     (* Corollary remove_lock_after_equiv : forall {Γ Δ : Ctxt} {m : mod} {p : PName}, *)
     (*     remove_lock_after Γ m p = Some Δ -> *)
     (*     exists (Γ1 Γ2 : Ctxt), ctxt_equiv Γ (ctxt_app (LockExt Γ1 p) Γ2) /\ ctxt_equiv Δ (ctxt_app Γ1 Γ2). *)

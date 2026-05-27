@@ -734,6 +734,13 @@ Section Modality.
       - clear cto IHm; induction m; inversion H0; subst; apply IHm; auto.
       - apply ConsTower_reduce in cto0. apply IHm; auto.
     Defined.
+
+    Definition ConsTowerOnPrefix : forall m1 m2, ConsTowerOn m1 m2 -> ~ PrefixOf m1 m2.
+    Proof using H PName.
+      intros m1 m2 cot pfx; induction pfx.
+      - apply ConsTowerOn_antirefl with (m := m); assumption.
+      - apply IHpfx; apply ConsTower_reduce with (p := p); assumption.
+    Qed.
     
     Definition ConsTowerOnPrefixT : forall m1 m2, ConsTowerOn m1 m2 -> PrefixOfT m1 m2 -> False.
     Proof.

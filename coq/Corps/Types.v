@@ -99,19 +99,19 @@ Section CorpsTypes.
         rewrite (all_locks_proper eqv) in pfx.
         destruct (@change_lock_after_defined _ _ Δ m p q pfx) as [E eqE].
         apply @SendTyping with (Δ := E) (n := n); auto. apply IHtyp; auto.
-        apply (change_lock_equiv eqv eq eqE).
+        apply (change_lock_after_proper' eqv eq eqE).
         rewrite <- (lock_location_proper (cons m p) eqv); assumption.
       - pose proof (remove_lock_after_prefix eq) as pfx.
         rewrite (all_locks_proper eqv) in pfx.
         destruct (remove_lock_after_defined pfx) as [E eqE].
         apply @UpTyping with (Δ := E) (n := n); auto. apply IHtyp; auto.
-        apply (remove_lock_equiv eqv eq eqE).
+        apply (remove_lock_after_proper' eqv eq eqE).
         rewrite <- (lock_location_proper (cons m p) eqv); assumption.
       - pose proof (add_lock_after_prefix eq) as pfx.
         rewrite (all_locks_proper eqv) in pfx.
         destruct (@add_lock_after_defined _ _ Δ m p pfx) as [E eqE].
         apply @DownTyping with (Δ := E) (n := n); auto. apply IHtyp; auto.
-        apply (add_lock_equiv eqv eq eqE).
+        apply (add_lock_after_proper' eqv eq eqE).
         rewrite <- (lock_location_proper m eqv); assumption.
     Qed.
 
@@ -196,18 +196,22 @@ Section CorpsTypes.
     Inductive TypedSubst : Ctxt -> substitution -> Ctxt -> Prop :=
     | EmptySubst (σ : substitution) (Γ Δ : Ctxt) :
       ctxt_equiv Γ EmptyCtxt -> all_locks Δ = base -> TypedSubst Γ σ Δ
-    | VarLSubst (Γ Δ : Ctxt) (m : mod) (τ : type) (e : expr) (σ1 σ2 : substitution):
-      TypedSubst Γ σ1 Δ ->
+    | VarLSubst (Γ1 Γ2 Δ : Ctxt) (m : mod) (τ : type) (e : expr) (σ1 σ2 : substitution):
+      TypedSubst Γ2 σ1 Δ ->
       Typed (LockExt Δ m) e τ ->
       (forall n, σ2 n = add_to_subst σ1 e n) ->
-      TypedSubst (VarExt Γ m τ) σ2 Δ
-    | VarRSubst (Γ Δ : Ctxt) (m : mod) (τ : type) (σ1 σ2 : substitution) :
-      TypedSubst Γ σ1 Δ ->
-      (forall n, n < num_vars Γ -> σ2 n = ren (σ1 n) S) -> 
-      TypedSubst Γ σ2 (VarExt Δ m τ)
-    | LockSubst (Γ Δ : Ctxt) (m : mod) (σ : substitution) :
-      TypedSubst Γ σ Δ ->
-      TypedSubst (LockExt Γ m) σ (LockExt Δ m).
+      ctxt_equiv Γ1 (VarExt Γ2 m τ) ->
+      TypedSubst Γ1 σ2 Δ
+    | VarRSubst (Γ Δ1 Δ2 : Ctxt) (m : mod) (τ : type) (σ1 σ2 : substitution) :
+      TypedSubst Γ σ1 Δ1 ->
+      (forall n, n < num_vars Γ -> σ2 n = ren (σ1 n) S) ->
+      ctxt_equiv Δ2 (VarExt Δ1 m τ) ->
+      TypedSubst Γ σ2 Δ2
+    | LockSubst (Γ1 Γ2 Δ1 Δ2 : Ctxt) (m : mod) (σ : substitution) :
+      TypedSubst Γ2 σ Δ2 ->
+      ctxt_equiv Γ1 (LockExt Γ2 m) ->
+      ctxt_equiv Δ1 (LockExt Δ2 m) ->
+      TypedSubst Γ1 σ Δ1.
 
     Theorem TypedSubstAt : forall {Γ Δ : Ctxt} {σ : substitution} {n : nat} {m1 m2 : mod} {τ : type},
         TypedSubst Γ σ Δ ->
@@ -216,17 +220,21 @@ Section CorpsTypes.
     Proof using.
       intros Γ Δ σ n m1 m2 τ styp; revert n m1 m2 τ; induction styp; intros n m1 m2 τ' i.
       - rewrite (InCtxt_proper H0) in i. dependent destruction i; cbn.
-      - dependent destruction i; cbn.
+      - rewrite (InCtxt_proper H2) in i; dependent destruction i; cbn.
         -- rewrite mod_base_app in H0; rewrite H1; cbn; assumption.
         -- rewrite H1; cbn; apply IHstyp with (m1 := m0); assumption.
-      - rewrite H0. apply @weakening with (Γ := LockExt Δ m2).
+      - rewrite H0; [| apply InCtxt_lt in i; assumption].
+        apply @weakening with (Γ := LockExt Δ1 m2).
+        apply (ctxt_leq_proper ltac:(reflexivity) (LockExtEquiv m2 (CtxtEquivSym _ _ H1))).
         constructor; eapply VarAddLeq; [apply ctxt_leq_refl | unfold id_renaming; auto].
         apply IHstyp with (m1 := m1); assumption.
-        apply InCtxt_lt in i; assumption.
-      - dependent destruction i; cbn.
+      - rewrite (InCtxt_proper H0) in i.
+        dependent destruction i; cbn.
         rewrite mod_app_assoc in i. apply IHstyp in i.
-        apply Typed_proper with (Δ := LockExt (LockExt Δ m) m2) in i. assumption.
-        apply LockSplitEquiv. reflexivity.
+        apply Typed_proper with (Γ := LockExt (LockExt Δ2 m) m2).
+        2: apply Typed_proper with (Δ := LockExt (LockExt Δ2 m) m2) in i; [assumption|].
+        apply LockExtEquiv; symmetry; auto.
+        apply LockSplitEquiv; reflexivity.
     Qed.
 
     Lemma TypedSubstUp : forall {Γ Δ : Ctxt} {σ : substitution} {m : mod} {τ : type},
@@ -234,10 +242,11 @@ Section CorpsTypes.
         TypedSubst (VarExt Γ m τ) (substup σ) (VarExt Δ m τ).
     Proof using.
       intros Γ Δ σ m τ styp.
-      eapply VarLSubst.
-      - eapply VarRSubst; [exact styp | intro n; reflexivity].
+      eapply VarLSubst with (Γ2 := Γ).
+      - eapply VarRSubst; [exact styp | intro n; reflexivity | reflexivity].
       - eapply VarTyping; apply @thereLockInCtxt with (m1 := base); rewrite mod_base_app; apply hereInCtxt.
       - intro n; destruct n; cbn; reflexivity.
+      - reflexivity.
     Qed.
 
     Theorem TypeSubst_ext : forall {Γ Δ : Ctxt} {σ1 σ2 : substitution},
@@ -251,13 +260,36 @@ Section CorpsTypes.
       - eapply VarRSubst; eauto. intro n; rewrite <- ext_eq; auto.
     Qed.
 
+    Theorem TypeSubst_proper : forall {Γ1 Γ2 Δ1 Δ2 : Ctxt} {σ : substitution},
+        TypedSubst Γ1 σ Δ1 ->
+        ctxt_equiv Γ1 Γ2 ->
+        ctxt_equiv Δ1 Δ2 ->
+        TypedSubst Γ2 σ Δ2.
+    Proof using.
+      intros Γ1 Γ2 Δ1 Δ2 σ styp; revert Γ2 Δ2; induction styp; intros Γ3 Δ3 eqvΓ eqvΔ.
+      - constructor. transitivity Γ; auto; symmetry; assumption.
+        rewrite <- (all_locks_proper eqvΔ); assumption.
+      - eapply VarLSubst. 3: exact H1.
+        3: transitivity Γ1; [symmetry; assumption | exact H2].
+        apply IHstyp; [reflexivity | assumption].
+        apply Typed_proper' with (Γ := LockExt Δ m); auto.
+        constructor; auto.
+      - eapply VarRSubst. 2: rewrite <- (num_vars_proper eqvΓ); exact H0.
+        eapply IHstyp; [assumption | reflexivity].
+        transitivity Δ2; [symmetry|]; auto. exact H1.
+      - eapply LockSubst. exact styp.
+        transitivity Γ1; [symmetry; assumption | exact H0].
+        transitivity Δ1; [symmetry; assumption | exact H1].
+    Qed.        
+
     Theorem TypeSubstRefl : forall {Γ : Ctxt},
         TypedSubst Γ id_substitution Γ.
     Proof using.
       intro Γ; induction Γ; try (econstructor; eauto; fail).
-      econstructor; reflexivity. 
-      apply @TypeSubst_ext with (σ1 := substup id_substitution); [exact id_substup|].
-      apply TypedSubstUp. exact IHΓ.
+      - econstructor; reflexivity. 
+      - apply @TypeSubst_ext with (σ1 := substup id_substitution); [exact id_substup|].
+        apply TypedSubstUp; exact IHΓ.
+      - eapply LockSubst; try reflexivity; assumption.
     Qed.
 
     Theorem TypedSubstAllLocks : forall {Γ Δ : Ctxt} {σ : substitution},
@@ -268,7 +300,10 @@ Section CorpsTypes.
       - transitivity (@all_locks PName EmptyCtxt).
         apply all_locks_proper; assumption.
         cbn; symmetry; assumption.
-      - f_equal; assumption.
+      - rewrite (all_locks_proper H2); cbn. assumption.
+      - rewrite (all_locks_proper H1); cbn. assumption.
+      - rewrite (all_locks_proper H0); rewrite (all_locks_proper H1); cbn.
+        f_equal; assumption.
     Qed.
     
     Theorem TypedSubstLockLocation : forall {Γ Δ : Ctxt} {σ : substitution} {i j : nat} {m : mod},
@@ -280,23 +315,28 @@ Section CorpsTypes.
       intros Γ Δ σ i j m styp; revert i j m; induction styp; intros i j m' eqi eqj k i_le_k k_lt_Γ;
         cbn in *.
       - rewrite (num_vars_proper H0) in k_lt_Γ; cbn in k_lt_Γ; inversion k_lt_Γ.
-      - destruct (lock_location Γ m') eqn: eqi'; inversion eqi; subst; clear eqi; rename eqi' into eqi.
+      - rewrite (lock_location_proper m' H2) in eqi; cbn in eqi.
+        destruct (lock_location Γ2 m') eqn: eqi'; inversion eqi; subst; clear eqi; rename eqi' into eqi.
+        rewrite (num_vars_proper H2) in k_lt_Γ; cbn in k_lt_Γ.
         rewrite H1; destruct k; [inversion i_le_k|]; cbn.
         rewrite <- PeanoNat.Nat.succ_lt_mono in k_lt_Γ; apply le_S_n in i_le_k.
         exact (IHstyp n j m' eqi eqj k i_le_k k_lt_Γ).
-      - destruct (lock_location Δ m') eqn:eqj'; inversion eqj; subst; clear eqj; rename eqj' into eqj.
+      - rewrite (lock_location_proper m' H1) in eqj; cbn in eqj.
+        destruct (lock_location Δ1 m') eqn:eqj'; inversion eqj; subst; clear eqj; rename eqj' into eqj.
         rewrite H0. apply @closed_below_ren with (k' := n); [apply le_n_S|].
         apply IHstyp with (i := i) (m := m'); assumption.
         assumption.
-      - rewrite <- (TypedSubstAllLocks styp) in eqj; destruct (prefixb m' (all_locks Γ)) eqn:pfx.
+      - rewrite (lock_location_proper m' H0) in eqi; rewrite (lock_location_proper m' H1) in eqj; cbn in eqi; cbn in eqj.
+        rewrite (num_vars_proper H0) in k_lt_Γ; cbn in k_lt_Γ.
+        rewrite <- (TypedSubstAllLocks styp) in eqj; destruct (prefixb m' (all_locks Γ2)) eqn:pfx.
         apply IHstyp with (i := i) (m := m'); assumption.
-        destruct (prefixb m' (mod_app (all_locks Γ) m)) eqn: pfx'; inversion eqi; inversion eqj; subst.
+        destruct (prefixb m' (mod_app (all_locks Γ2) m)) eqn: pfx'; inversion eqi; inversion eqj; subst.
         apply closed_below_zero.
     Qed.
 
     Definition unit_subst_before (σ : substitution) (n : nat) :=
       fun m => if PeanoNat.Nat.ltb m n then @uu PName else σ m.
-
+    
     Lemma change_lock_after_subst : forall {Γ1 Γ2 Δ1 Δ2 : Ctxt} {σ : substitution} {m : mod} {p q : PName} {n : nat},
         TypedSubst Γ1 σ Δ1 ->
         change_lock_after Γ1 m p q = Some Γ2 ->
@@ -305,38 +345,41 @@ Section CorpsTypes.
         TypedSubst Γ2 (unit_subst_before σ n) Δ2.
     Proof using.
       intros Γ1 Γ2 Δ1 Δ2 σ m p q n styp; revert Γ2 Δ2 m p q n; dependent induction styp;
-        intros Γ2 Δ2 n p q n' eqΓ eqΔ loc; cbn in *.
+        intros Γ3 Δ3 n p q n' eqΓ eqΔ loc; cbn in *.
       - eapply change_lock_after_no_locks in H1; rewrite H1 in eqΔ; inversion eqΔ.
-      - destruct (change_lock_after Γ n p q) eqn:eqΓ';
+      - pose proof (change_lock_after_proper eqΓ H2). cbn in H3.
+        destruct (change_lock_after Γ2 n p q) eqn:eqΓ';
           inversion eqΓ; subst; clear eqΓ; rename eqΓ' into eqΓ.
-        destruct (lock_location Γ (cons n p)) eqn:loc';
+        2: { destruct H3 as [Δ2 [oops _]]; inversion oops. }
+        rewrite (lock_location_proper (cons n p) H2) in loc; cbn in loc.
+        destruct (lock_location Γ2 (cons n p)) eqn:loc';
           inversion loc; subst; clear loc; rename loc' into loc.
-        apply VarLSubst with (e := uu) (σ1 := unit_subst_before σ1 n0).
-        apply IHstyp with (m := n) (p := p) (q := q); auto.
-        apply UnitTyping.
-        intro n1; destruct n1; cbn. reflexivity.
-        unfold unit_subst_before.
-        destruct (PeanoNat.Nat.ltb n1 n0) eqn:eq.
-        rewrite PeanoNat.Nat.ltb_lt in eq; rewrite PeanoNat.Nat.succ_lt_mono in eq; rewrite <- PeanoNat.Nat.ltb_lt in eq;
-          rewrite eq; reflexivity.
-        destruct (PeanoNat.Nat.ltb (S n1) (S n0)) eqn:eq'.
-        rewrite PeanoNat.Nat.ltb_lt in eq'; apply <- PeanoNat.Nat.succ_lt_mono in eq'; rewrite <- PeanoNat.Nat.ltb_lt in eq';
-          rewrite eq' in eq; inversion eq.
-        rewrite H1; cbn; reflexivity.
-      - destruct (change_lock_after Δ n p q) eqn:eqΔ'; inversion eqΔ; subst; clear eqΔ; rename eqΔ' into eqΔ; rename c into Δ2.
-        apply VarRSubst with (σ1 := unit_subst_before σ1 n').
-        eapply IHstyp; eauto.
+        destruct H3 as [Δ2 [eqΔ2 eqv']]; inversion eqΔ2; subst; clear eqΔ2.
+        apply VarLSubst with (e := uu) (σ1 := unit_subst_before σ1 n0) (Γ2 := c) (m := base) (τ := UnitT); eauto.
+        constructor.
+        intro n1; destruct n1; cbn. reflexivity. unfold unit_subst_before.
+        rewrite H1; cbn; destruct n0; reflexivity.
+      - destruct (change_lock_after_proper eqΔ H1) as [Δ4 [eqΔ4 eqv']];
+          cbn in eqΔ4.
+        destruct (change_lock_after Δ1 n p q) as [Δ4'|] eqn:eqΔ'; inversion eqΔ4; subst; clear eqΔ4; rename eqΔ' into eqΔ4; rename Δ4' into Δ4.
+        eapply VarRSubst with (σ1 := unit_subst_before σ1 n');
+          [eapply IHstyp; eauto | | exact eqv'].
         intros n0 n0_lt_nv. unfold unit_subst_before.
         destruct (PeanoNat.Nat.ltb n0 n'); cbn; auto.
         apply H0; apply change_lock_after_num_vars in eqΓ; rewrite eqΓ; assumption.
-      - rewrite <- (TypedSubstAllLocks styp) in eqΔ.
-        destruct (prefixb (cons n p) (all_locks Γ)) eqn:pfx;
-          [| destruct (remove_Prefix (all_locks Γ) n) as [m''|]; [|inversion eqΓ]].
-        -- eapply IHstyp; eauto.
-        -- destruct (prefixb (cons m'' p) m) eqn:pfx'; inversion eqΓ; inversion eqΔ; subst; clear eqΓ eqΔ.
-           destruct (prefixb (cons n p) (mod_app (all_locks Γ) m)) eqn:pfx'';
+      - destruct (change_lock_after_proper eqΓ H0) as [Γ3' [eqΓ3' eqvΓ]];
+          destruct (change_lock_after_proper eqΔ H1) as [Δ3' [eqΔ3' eqvΔ]]; cbn in *.
+        rewrite <- (TypedSubstAllLocks styp) in eqΔ3'.
+        rewrite (lock_location_proper (cons n p) H0) in loc; cbn in loc.
+        destruct (prefixb (cons n p) (all_locks Γ2)) eqn:pfx;
+          [| destruct (remove_Prefix (all_locks Γ2) n) as [m''|]; [|inversion eqΓ3']].
+        -- apply @TypeSubst_proper with (Δ1 := Δ3') (Γ1 := Γ3'); try (symmetry; assumption).
+           eapply IHstyp; eauto.           
+        -- destruct (prefixb (cons m'' p) m) eqn:pfx'; inversion eqΓ3'; inversion eqΔ3'; subst; clear eqΓ3' eqΔ3'.
+           eapply LockSubst; [| exact eqvΓ | exact eqvΔ].
+           eapply TypeSubst_ext; [| exact styp].
+           destruct (prefixb (cons n p) (mod_app (all_locks Γ2) m)) eqn:pfx'';
              inversion loc; subst; clear loc.
-           apply LockSubst. eapply TypeSubst_ext; [| exact styp].
            intro n0. unfold unit_subst_before.
            destruct (PeanoNat.Nat.ltb n0 0) eqn:eq; [| reflexivity].
            rewrite PeanoNat.Nat.ltb_lt in eq; inversion eq.
@@ -350,14 +393,16 @@ Section CorpsTypes.
         TypedSubst Γ2 (unit_subst_before σ n) Δ2.
     Proof using.
       intros Γ1 Γ2 Δ1 Δ2 σ m p n styp; revert Γ2 Δ2 m p n; dependent induction styp;
-        intros Γ2 Δ2 n p n' eqΓ eqΔ loc; cbn in *.
+        intros Γ3 Δ3 n p n' eqΓ eqΔ loc; cbn in *.
       - eapply remove_lock_after_no_locks in H1; rewrite H1 in eqΔ; inversion eqΔ.
-      - destruct (remove_lock_after Γ n p) eqn:eqΓ';
-          inversion eqΓ; subst; clear eqΓ; rename eqΓ' into eqΓ.
-        destruct (lock_location Γ (cons n p)) eqn:loc';
+      - destruct (remove_lock_after_proper eqΓ H2) as [Γ3' [eqΓ3' eqv]].
+        cbn in eqΓ3'; destruct (remove_lock_after Γ2 n p) eqn:eqΓ';
+          inversion eqΓ3'; subst; clear eqΓ3'; rename eqΓ' into eqΓ3'.
+        rewrite (lock_location_proper (cons n p) H2) in loc; cbn in loc;
+          destruct (lock_location Γ2 (cons n p)) eqn:loc';
           inversion loc; subst; clear loc; rename loc' into loc.
-        apply VarLSubst with (e := uu) (σ1 := unit_subst_before σ1 n0).
-        apply IHstyp with (m := n) (p := p); auto.
+        eapply VarLSubst with (e := uu) (σ1 := unit_subst_before σ1 n0).
+        apply IHstyp with (m := n) (p := p); eauto.
         apply UnitTyping.
         intro n1; destruct n1; cbn. reflexivity.
         unfold unit_subst_before.
@@ -368,20 +413,28 @@ Section CorpsTypes.
         rewrite PeanoNat.Nat.ltb_lt in eq'; apply <- PeanoNat.Nat.succ_lt_mono in eq'; rewrite <- PeanoNat.Nat.ltb_lt in eq';
           rewrite eq' in eq; inversion eq.
         rewrite H1; cbn; reflexivity.
-      - destruct (remove_lock_after Δ n p) eqn:eqΔ'; inversion eqΔ; subst; clear eqΔ; rename eqΔ' into eqΔ; rename c into Δ2.
-        apply VarRSubst with (σ1 := unit_subst_before σ1 n').
+        exact eqv.
+      - destruct (remove_lock_after_proper eqΔ H1) as [Δ3' [eqΔ3' eqv]]; cbn in eqΔ3'.
+        destruct (remove_lock_after Δ1 n p) eqn:eqΔ'; inversion eqΔ3'; subst; clear eqΔ3'; rename eqΔ' into eqΔ3'; rename c into Δ3'.
+        eapply VarRSubst with (σ1 := unit_subst_before σ1 n'). 3: exact eqv.
         eapply IHstyp; eauto.
         intro n0. unfold unit_subst_before.
         destruct (PeanoNat.Nat.ltb n0 n'); cbn; auto.
         intro n_lt_nv; apply H0; apply remove_lock_after_num_vars in eqΓ; rewrite eqΓ; assumption.
-      - rewrite <- (TypedSubstAllLocks styp) in eqΔ.
-        destruct (prefixb (cons n p) (all_locks Γ)) eqn:pfx;
-          [| destruct (remove_Prefix (all_locks Γ) n) as [m''|]; [|inversion eqΓ]].
-        -- eapply IHstyp; eauto.
-        -- destruct (prefixb (cons m'' p) m) eqn:pfx'; inversion eqΓ; inversion eqΔ; subst; clear eqΓ eqΔ.
-           destruct (prefixb (cons n p) (mod_app (all_locks Γ) m)) eqn:pfx'';
+      - destruct (remove_lock_after_proper eqΓ H0) as [Γ3' [eqΓ3' eqvΓ]].
+        destruct (remove_lock_after_proper eqΔ H1) as [Δ3' [eqΔ3' eqvΔ]].
+        cbn in eqΓ3'; cbn in eqΔ3'.
+        rewrite (lock_location_proper (cons n p) H0) in loc; cbn in loc.
+        rewrite <- (TypedSubstAllLocks styp) in eqΔ3'.
+        destruct (prefixb (cons n p) (all_locks Γ2)) eqn:pfx;
+          [| destruct (remove_Prefix (all_locks Γ2) n) as [m''|]; [|inversion eqΓ3']].
+        -- eapply TypeSubst_proper; [| symmetry; exact eqvΓ | symmetry; exact eqvΔ].
+           eapply IHstyp; eauto.
+        -- destruct (prefixb (cons m'' p) m) eqn:pfx'; inversion eqΓ3'; inversion eqΔ3'; subst; clear eqΓ3' eqΔ3'.
+           destruct (prefixb (cons n p) (mod_app (all_locks Γ2) m)) eqn:pfx'';
              inversion loc; subst; clear loc.
-           apply LockSubst. eapply TypeSubst_ext; [| exact styp].
+           eapply LockSubst; [| exact eqvΓ | exact eqvΔ].
+           eapply TypeSubst_ext; [| exact styp].
            intro n0. unfold unit_subst_before.
            destruct (PeanoNat.Nat.ltb n0 0) eqn:eq; [| reflexivity].
            rewrite PeanoNat.Nat.ltb_lt in eq; inversion eq.
@@ -395,7 +448,7 @@ Section CorpsTypes.
         TypedSubst Γ2 (unit_subst_before σ n) Δ2.
     Proof using.
       intros Γ1 Γ2 Δ1 Δ2 σ m p n styp; revert Γ2 Δ2 m p n; dependent induction styp;
-        intros Γ2 Δ2 n p n' eqΓ eqΔ loc; cbn in *.
+        intros Γ3 Δ3 n p n' eqΓ eqΔ loc; cbn in *.
       - apply add_lock_no_locks in eqΔ; auto.
         pose proof (equiv_empty_emptoid2 Γ H0).
         apply add_lock_emptoid in eqΓ; auto; destruct eqΓ; subst.
@@ -405,14 +458,18 @@ Section CorpsTypes.
         generalize (num_vars Δ) as n; intro n.
         clear Γ Δ H0 H1 H2.
         induction n; cbn.
-        -- apply LockSubst; apply EmptySubst; reflexivity.
-        -- apply VarRSubst with (σ1 := σ). assumption.
+        -- apply LockSubst with (Γ2 := EmptyCtxt) (Δ2 := EmptyCtxt) (m := p).
+           eapply EmptySubst; reflexivity. all: reflexivity.
+        -- eapply VarRSubst with (σ1 := σ). exact IHn. 2: reflexivity.
            intros n0 n0_lt_nv; cbn in n0_lt_nv. inversion n0_lt_nv.
-      - destruct (add_lock_after Γ n p) eqn:eqΓ';
-          inversion eqΓ; subst; clear eqΓ; rename eqΓ' into eqΓ.
-        destruct (lock_location Γ n) eqn:loc';
+      - destruct (add_lock_after_proper eqΓ H2) as [Γ3' [eqΓ3' eqv]]; cbn in eqΓ3'.
+        destruct (add_lock_after Γ2 n p) eqn:eqΓ';
+          inversion eqΓ3'; subst; clear eqΓ3'; rename eqΓ' into eqΓ3'.
+        rewrite (lock_location_proper n H2) in loc; cbn in loc.
+        destruct (lock_location Γ2 n) eqn:loc';
           inversion loc; subst; clear loc; rename loc' into loc.
-        apply VarLSubst with (e := uu) (σ1 := unit_subst_before σ1 n0).
+        apply VarLSubst with (e := uu) (σ1 := unit_subst_before σ1 n0)
+                             (Γ2 := c) (m := base) (τ := UnitT); auto.
         apply IHstyp with (m := n) (p := p); auto.
         apply UnitTyping.
         intro n1; destruct n1; cbn. reflexivity.
@@ -424,23 +481,24 @@ Section CorpsTypes.
         rewrite PeanoNat.Nat.ltb_lt in eq'; apply <- PeanoNat.Nat.succ_lt_mono in eq'; rewrite <- PeanoNat.Nat.ltb_lt in eq';
           rewrite eq' in eq; inversion eq.
         rewrite H1; cbn; reflexivity.
-      - destruct (add_lock_after Δ n p) eqn:eqΔ'; inversion eqΔ; subst; clear eqΔ; rename eqΔ' into eqΔ; rename c into Δ2.
-        apply VarRSubst with (σ1 := unit_subst_before σ1 n').
+      - destruct (add_lock_after_proper eqΔ H1) as [Δ3' [eqΔ3' eqv]]; cbn in eqΔ3'.
+        destruct (add_lock_after Δ1 n p) eqn:eqΔ'; inversion eqΔ3'; subst; clear eqΔ3'; rename eqΔ' into eqΔ3'; rename c into Δ3'.
+        apply VarRSubst with (σ1 := unit_subst_before σ1 n') (Δ1 := Δ3') (m := base) (τ := UnitT); auto.
         eapply IHstyp; eauto.
         intro n0. unfold unit_subst_before.
         destruct (PeanoNat.Nat.ltb n0 n'); cbn; auto.
         intro n0_lt_nv; apply H0; apply add_lock_after_num_vars in eqΓ; rewrite eqΓ; assumption.
-      - rewrite <- (TypedSubstAllLocks styp) in eqΔ.
-        destruct (prefixb n (all_locks Γ)) eqn:pfx;
-          [| destruct (remove_Prefix (all_locks Γ) n) as [m''|]; [|inversion eqΓ]].
-        -- eapply IHstyp; eauto.
-        -- destruct (prefixb m'' m) eqn:pfx'; inversion eqΓ; inversion eqΔ; subst; clear eqΓ eqΔ.
-           destruct (prefixb n (mod_app (all_locks Γ) m)) eqn:pfx'';
+      - destruct (add_lock_after_proper eqΓ H0) as [Γ3' [eqΓ3' eqvΓ]]; cbn in eqΓ3'.
+        destruct (add_lock_after_proper eqΔ H1) as [Δ3' [eqΔ3' eqvΔ]]; cbn in eqΔ3'.
+        rewrite <- (TypedSubstAllLocks styp) in eqΔ3'.
+        rewrite (lock_location_proper n H0) in loc; cbn in loc.
+        destruct (prefixb n (all_locks Γ2)) eqn:pfx;
+          [| destruct (remove_Prefix (all_locks Γ2) n) as [m''|]; [|inversion eqΓ3']].
+        -- eapply TypeSubst_proper. eapply IHstyp; eauto. all: symmetry; assumption.
+        -- destruct (prefixb m'' m) eqn:pfx'; inversion eqΓ3'; inversion eqΔ3'; subst; clear eqΓ3' eqΔ3'.
+           destruct (prefixb n (mod_app (all_locks Γ2) m)) eqn:pfx'';
              inversion loc; subst; clear loc.
-           apply LockSubst. eapply TypeSubst_ext; [| exact styp].
-           intro n0. unfold unit_subst_before.
-           destruct (PeanoNat.Nat.ltb n0 0) eqn:eq; [| reflexivity].
-           rewrite PeanoNat.Nat.ltb_lt in eq; inversion eq.
+           eapply LockSubst; eauto. 
     Qed.
 
     Theorem TypedSubstitution : forall {Γ Δ : Ctxt} {σ : substitution} {e : expr} {τ : type},
@@ -453,8 +511,8 @@ Section CorpsTypes.
       - apply Typed_proper with (Γ := LockExt Δ base); [constructor; reflexivity |].
         eapply @TypedSubstAt; [exact styp| cbn; exact i].
       - constructor.
-        apply IHtyp; constructor; auto; fail.
-      - econstructor. apply IHtyp1; auto. apply IHtyp2.
+        eapply IHtyp. eapply LockSubst; eauto. all: reflexivity.
+      - econstructor. eapply IHtyp1; eauto. eapply IHtyp2.
         apply TypedSubstUp; auto.
       - econstructor; [apply IHtyp1 | apply IHtyp2 | apply IHtyp3]; try apply TypedSubstUp; auto.
       - constructor; apply IHtyp; apply TypedSubstUp; auto.
